@@ -450,12 +450,12 @@ namespace stp
    * Example: (a & b) | (a & ~c) | (~b & ~c)
    * ************************************************************************************************************/
 
-  bool is_variable( const matrix& mat )
+  inline bool is_variable( const matrix& mat )
   {
     return mat.rows() == 2 && mat.cols() == 1;
   }
 
-  int get_variable( const matrix& mat )
+  inline int get_variable( const matrix& mat )
   {
     if( is_variable( mat ) )
     {
@@ -467,7 +467,7 @@ namespace stp
     }
   }
 
-  std::vector<std::string> matrix_split( const std::string& input, const std::string& pred )
+  inline std::vector<std::string> matrix_split( const std::string& input, const std::string& pred )
   {
     std::vector<std::string> result;
     std::string temp{ "" };
@@ -509,7 +509,7 @@ namespace stp
     return result;
   }
 
-  matrix normalize_matrix( matrix_chain mc )
+  inline matrix normalize_matrix( matrix_chain mc )
   {
     matrix Mr( 4, 2 ); // Reduced power matrix
     Mr << 1, 0, 0, 0, 0, 0, 0, 1;
@@ -633,7 +633,7 @@ namespace stp
 
   // example:             (a & b) | (a & ~c) | (~b & ~c)                                 
   //                      a b c
-  matrix from_exp_to_nmx( const std::string& expression, 
+  inline matrix from_exp_to_nmx( const std::string& expression, 
                           const std::vector<std::string>& input_names, 
                           bool print = false )
   {
@@ -787,7 +787,7 @@ namespace stp
   }
    /*************************************************************************************************************/
   
-  matrix expr_normalize( const std::string& expr, const std::vector<std::string>& input_names, bool verbose = false )
+  inline matrix expr_normalize( const std::string& expr, const std::vector<std::string>& input_names, bool verbose = false )
   {
     expr_normalize_impl p( expr, input_names, verbose );
     auto mat = p.run();
@@ -800,7 +800,7 @@ namespace stp
     return mat;
   }
   
-  matrix_chain expr_normalize_to_chain( const std::string& expr, const std::vector<std::string>& input_names, bool verbose = false )
+  inline matrix_chain expr_normalize_to_chain( const std::string& expr, const std::vector<std::string>& input_names, bool verbose = false )
   {
     expr_normalize_impl p( expr, input_names, verbose );
     auto mc = p.normalizing();
