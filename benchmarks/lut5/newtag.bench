@@ -1,0 +1,12 @@
+# Benchmark "/home/qck/benchmark/newtag" written by ABC on Tue Dec 24 21:22:45 2024
+INPUT(busB<31>)
+INPUT(busA<31>)
+INPUT(busA<30>)
+INPUT(busB<30>)
+INPUT(busB<29>)
+INPUT(busA<29>)
+INPUT(busB<28>)
+INPUT(busA<28>)
+OUTPUT(ptagcompare)
+new_n12     = LUT 0x022a2a2a ( busB<30>, busB<29>, busA<29>, busB<28>, busA<28> )
+ptagcompare = LUT 0xffef ( new_n12, busB<31>, busA<31>, busA<30> )

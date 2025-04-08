@@ -1,0 +1,7 @@
+# Benchmark "/home/qck/benchmark-1po/exam3_d" written by ABC on Wed Dec 25 01:16:33 2024
+INPUT(x0)
+INPUT(x1)
+INPUT(x2)
+INPUT(x3)
+OUTPUT(z0)
+z0          = LUT 0x1274 ( x0, x1, x2, x3 )

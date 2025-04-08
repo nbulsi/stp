@@ -1,0 +1,13 @@
+# Benchmark "/home/qck/benchmark-1po/rd84f3" written by ABC on Wed Dec 25 01:15:23 2024
+INPUT(x0)
+INPUT(x1)
+INPUT(x2)
+INPUT(x3)
+INPUT(x4)
+INPUT(x5)
+INPUT(x6)
+INPUT(x7)
+OUTPUT(z0)
+z0          = LUT 0x8 ( new_n12, x7 )
+new_n12     = LUT 0x8000 ( new_n13, x4, x5, x6 )
+new_n13     = LUT 0x8000 ( x0, x1, x2, x3 )

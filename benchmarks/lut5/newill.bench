@@ -1,0 +1,13 @@
+# Benchmark "/home/qck/benchmark/newill" written by ABC on Tue Dec 24 21:29:50 2024
+INPUT(CPIPE1s<9>)
+INPUT(CPIPE1s<0>)
+INPUT(CPIPE1s<1>)
+INPUT(CPIPE1s<2>)
+INPUT(CPIPE1s<3>)
+INPUT(CPIPE1s<4>)
+INPUT(CPIPE1s<5>)
+INPUT(CPIPE1s<7>)
+OUTPUT(pillegalopc)
+pillegalopc = LUT 0xfdfcf0f0 ( new_n12, new_n13, CPIPE1s<9>, CPIPE1s<0>, CPIPE1s<7> )
+new_n12     = LUT 0xff184ff5 ( CPIPE1s<1>, CPIPE1s<2>, CPIPE1s<3>, CPIPE1s<4>, CPIPE1s<5> )
+new_n13     = LUT 0x0001 ( CPIPE1s<2>, CPIPE1s<3>, CPIPE1s<4>, CPIPE1s<5> )

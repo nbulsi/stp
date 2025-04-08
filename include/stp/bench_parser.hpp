@@ -39,64 +39,61 @@ using namespace stp;
 
 class bench_reader
 {
-public:
-	bool parse(std::istream& is, stp_circuit& circuit)
-	{
-		const std::string flag_input = "INPUT";
-		const std::string flag_output = "OUTPUT";
-		const std::string flag_lut = "LUT";
-		const std::string flag_gnd = "gnd";
-		for (std::string line; std::getline(is, line, '\n');) 
-		{
-			if (line.empty())
-			{
-				continue;
-			}
-			if (line.find(flag_input) != std::string::npos)
-			{
-				match_input(circuit, line);
-				continue;
-			}
-			if (line.find(flag_output) != std::string::npos)
-			{
-				match_output(circuit, line);
-				continue;
-			}
-			if (line.find(flag_lut) != std::string::npos)
-			{
-				match_gate(circuit, line);
-				continue;
-			}
-		}
-		return true;
-	}
+ public:
+  bool parse( std::istream& is, stp_circuit& circuit )
+  {
+    const std::string flag_input = "INPUT";
+    const std::string flag_output = "OUTPUT";
+    const std::string flag_lut = "LUT";
+    const std::string flag_gnd = "gnd";
+    for ( std::string line; std::getline( is, line, '\n' ); )
+      {
+        if ( line.empty() )
+          {
+            continue;
+          }
+        if ( line.find( flag_input ) != std::string::npos )
+          {
+            match_input( circuit, line );
+            continue;
+          }
+        if ( line.find( flag_output ) != std::string::npos )
+          {
+            match_output( circuit, line );
+            continue;
+          }
+        if ( line.find( flag_lut ) != std::string::npos )
+          {
+            match_gate( circuit, line );
+            continue;
+          }
+      }
+    return true;
+  }
 
-private:
-	bool match_input(stp_circuit& circuit, const std::string& line)
-	{
-		std::string input_name = str_split(line, "( )")[1];
-		uint32_t index = circuit.create_pi(input_name);
-		return true;
-	}
+ private:
+  bool match_input( stp_circuit& circuit, const std::string& line )
+  {
+    std::string input_name = str_split( line, "( )" )[ 1 ];
+    uint32_t index = circuit.create_pi( input_name );
+    return true;
+  }
 
-	bool match_output(stp_circuit& circuit, const std::string& line)
-	{
-		std::string output_name = str_split(line, "( )")[1];
-		uint32_t index = circuit.create_po(output_name);
-		return true;
-	}
+  bool match_output( stp_circuit& circuit, const std::string& line )
+  {
+    std::string output_name = str_split( line, "( )" )[ 1 ];
+    uint32_t index = circuit.create_po( output_name );
+    return true;
+  }
 
-	bool match_gate(stp_circuit& circuit, const std::string& line)
-	{
-		std::vector<std::string> gate = str_split(line, ",=( )");
-		std::string output = gate[0];
-		std::string tt = gate[2];
-		gate.erase(gate.begin(), gate.begin() + 3);
-		std::vector<std::string> inputs(gate);
-		circuit.create_node(tt, inputs, output);
-		return true;
-	}
+  bool match_gate( stp_circuit& circuit, const std::string& line )
+  {
+    std::vector<std::string> gate = str_split( line, ",=( )" );
+    std::string output = gate[ 0 ];
+    std::string tt = gate[ 2 ];
+    gate.erase( gate.begin(), gate.begin() + 3 );
+    std::vector<std::string> inputs( gate );
+    circuit.create_node( tt, inputs, output );
+    return true;
+  }
 };
-
-
-

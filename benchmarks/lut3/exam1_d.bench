@@ -1,0 +1,6 @@
+# Benchmark "/home/qck/benchmark-1po/exam1_d" written by ABC on Wed Dec 25 01:13:41 2024
+INPUT(x0)
+INPUT(x1)
+INPUT(x2)
+OUTPUT(z0)
+z0          = LUT 0x69 ( x0, x1, x2 )

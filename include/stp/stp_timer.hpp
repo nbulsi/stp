@@ -12,7 +12,7 @@
  *
  * The above copyright notice and this permission notice shall be
  * included in all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
  * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
@@ -30,17 +30,17 @@
   \author Ruibing Zhang
 */
 
-#pragma once 
+#pragma once
 
+#include <fmt/format.h>
 #include <chrono>
 #include <iostream>
 #include <type_traits>
-#include <fmt/format.h>
 
-template<class Clock = std::chrono::steady_clock>
+template <class Clock = std::chrono::steady_clock>
 class stopwatch
 {
-public:
+ public:
   using clock = Clock;
   using duration = typename Clock::duration;
   using time_point = typename Clock::time_point;
@@ -49,22 +49,15 @@ public:
    *
    * Starts tracking time.
    */
-  explicit stopwatch( duration& dur )
-      : dur( dur ),
-        beg( clock::now() )
-  {
-  }
+  explicit stopwatch( duration& dur ) : dur( dur ), beg( clock::now() ) {}
 
   /*! \brief Default deconstructor.
    *
    * Stops tracking time and updates duration.
    */
-  ~stopwatch()
-  {
-    dur += ( clock::now() - beg );
-  }
+  ~stopwatch() { dur += ( clock::now() - beg ); }
 
-private:
+ private:
   duration& dur;
   time_point beg;
 };
@@ -83,28 +76,31 @@ private:
 
       stopwatch<>::duration time{0};
 
-      auto result = call_with_stopwatch( time, [&]() { return function( parameters ); } );
-   \endverbatim
+      auto result = call_with_stopwatch( time, [&]() { return function(
+ parameters ); } ); \endverbatim
  *
  * \param dur Duration reference (time will be added to it)
  * \param fn Callable object with no arguments
  */
 
-template<class Fn, class Clock = std::chrono::steady_clock>
-std::invoke_result_t<Fn> call_with_stopwatch( typename Clock::duration& dur, Fn&& fn )
+template <class Fn, class Clock = std::chrono::steady_clock>
+std::invoke_result_t<Fn> call_with_stopwatch( typename Clock::duration& dur,
+                                              Fn&& fn )
 {
   stopwatch<Clock> t( dur );
   return fn();
 }
 
-template<class Duration>
+template <class Duration>
 inline double to_seconds( Duration const& dur )
 {
-  return std::chrono::duration_cast<std::chrono::duration<double>>( dur ).count();
+  return std::chrono::duration_cast<std::chrono::duration<double>>( dur )
+      .count();
 }
 
-template<class Duration>
+template <class Duration>
 inline double to_millisecond( Duration const& dur )
 {
-  return 1000 * std::chrono::duration_cast<std::chrono::duration<double>>( dur ).count();
+  return 1000 * std::chrono::duration_cast<std::chrono::duration<double>>( dur )
+                    .count();
 }
