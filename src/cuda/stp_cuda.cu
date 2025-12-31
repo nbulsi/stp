@@ -9,7 +9,7 @@
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Sparse"
 
-#include <excute_cuda.hpp>
+#include <stp/sim/execute_cuda.hpp>
 
 
 uint64_t Total_Thread = 0; // total supported threads

@@ -1,5 +1,5 @@
-#include "../algorithms/circuit_graph.hpp"
-#include "../algorithms/stp_utils.hpp"
+#include <stp/core/circuit_graph.hpp>
+#include <stp/utils/stp_utils.hpp>
 #include <iostream>
 #include <cmath>
 

@@ -21,7 +21,6 @@ make install
 Then you can clone **stp** project and compile it.
 
 ```bash
-git clone https://gitee.com/zfchu/stp.git   (Gitee repository)
 git clone https://github.com/nbulsi/stp.git (GitHub repository) 
 cd stp
 mkdir build

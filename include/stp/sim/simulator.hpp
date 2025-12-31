@@ -8,9 +8,9 @@
 #include <bitset>
 #include <climits>
 #include <omp.h>
-#include "../algorithms/stp_utils.hpp"
-#include "../algorithms/circuit_graph.hpp"
-#include "../io/expr_parser.hpp"
+#include <stp/utils/stp_utils.hpp>
+#include <stp/core/circuit_graph.hpp>
+#include <stp/io/expr_parser.hpp>
 
 #pragma once
 

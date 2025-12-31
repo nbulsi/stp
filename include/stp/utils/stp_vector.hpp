@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <list>
-#include "stp_utils.hpp"
+#include <stp/utils/stp_utils.hpp>
 
 #ifndef STP_VECTOR
 #define STP_VECTOR

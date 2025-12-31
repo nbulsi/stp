@@ -4,7 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <cmath>
-#include "excute_cuda.hpp"
+#include <stp/sim/execute_cuda.hpp>
 
 using stp_data = uint32_t;
 using id = stp_data;

@@ -10,9 +10,7 @@ message(STATUS "CUDA Architectures: ${CMAKE_CUDA_ARCHITECTURES}")
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fPIC")
 
 #Add CUDA source files to the project
-include_directories(${CMAKE_SOURCE_DIR}/src/include/algorithms)
-include_directories(${CMAKE_SOURCE_DIR}/src/include/io)
-include_directories(${CMAKE_SOURCE_DIR}/src/include/sim)
+# include directories are handled by root CMakeLists.txt
 
 add_library(stp_cuda  STATIC stp_cuda.cu)
 set_target_properties( stp_cuda

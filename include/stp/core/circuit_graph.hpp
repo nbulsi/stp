@@ -10,7 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <iomanip>
-#include "stp_vector.hpp"
+#include <stp/utils/stp_vector.hpp>
 #include <map>
 
 #ifndef CIRCUIT_GRAPH_H

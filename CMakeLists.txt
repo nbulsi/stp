@@ -28,6 +28,9 @@ include_directories(/usr/local/include/eigen3)
 # Options
 option(TEST "Build tests" OFF)
 
+# Add public include directory
+include_directories(${CMAKE_SOURCE_DIR}/include)
+
 add_compile_options(-g -O3)
 
 

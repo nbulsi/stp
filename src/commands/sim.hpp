@@ -3,11 +3,11 @@
 #include <chrono>
 #include <fstream>
 #include <alice/alice.hpp>
-#include "../include/io/lut_parser.hpp"
-#include "../include/io/expr_parser.hpp"
-#include "../include/algorithms/circuit_graph.hpp"
-#include "../include/sim/simulator.hpp"
-#include "../include/algorithms/excute.hpp"
+#include <stp/io/lut_parser.hpp>
+#include <stp/io/expr_parser.hpp>
+#include <stp/core/circuit_graph.hpp>
+#include <stp/sim/simulator.hpp>
+#include <stp/sim/execute.hpp>
 
 using namespace stp;
 
