@@ -1,3 +1,6 @@
+// Copyright (c) 2023-2026 The STP Authors
+// SPDX-License-Identifier: MIT
+
 #include <iostream>
 #include <list>
 #include <stp/utils/stp_utils.hpp>
