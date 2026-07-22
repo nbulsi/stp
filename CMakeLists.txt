@@ -2,6 +2,11 @@
 
 cmake_minimum_required(VERSION 3.19)
 
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+if(POLICY CMP0148)
+    set(CMAKE_POLICY_DEFAULT_CMP0148 OLD)
+endif()
+
 # Set C++ standard
 set(STP_CXX_STANDARD "17" CACHE STRING "C++ standard")
 set(CMAKE_CXX_STANDARD ${STP_CXX_STANDARD})
@@ -41,9 +46,6 @@ endif()
 
 add_subdirectory(lib)
 add_subdirectory(src)
-
-
-
 
 
 

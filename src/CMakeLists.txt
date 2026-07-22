@@ -10,7 +10,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 set(SOURCES stp.cpp)
 add_executable(stp ${SOURCES} ${FILENAMES})
-target_link_libraries(stp alice)
+target_link_libraries(stp PRIVATE alice)
 
 
 if(STP_ENABLE_CUDA AND CMAKE_CUDA_COMPILER)
@@ -37,9 +37,7 @@ else()
 message("found")
 message(STATUS "Eigen3 found at: ${EIGEN3_INCLUDE_DIRS}")
  # Add Eigen3 include directory to stp target
-  target_include_directories(stp INTERFACE ${EIGEN3_INCLUDE_DIRS})
+  target_include_directories(stp_lib INTERFACE ${EIGEN3_INCLUDE_DIRS})
 endif()
 
-find_package(OpenMP REQUIRED)
-target_link_libraries(stp OpenMP::OpenMP_CXX)
-target_link_libraries(stp  fmt Eigen3::Eigen pthread stp_lib)
+target_link_libraries(stp PRIVATE fmt Eigen3::Eigen pthread stp_lib)
