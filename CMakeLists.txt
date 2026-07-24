@@ -28,22 +28,14 @@ else()
     project(stp LANGUAGES CXX)
 endif()
 
-option(TEST "Build tests" OFF)
-
 # Add public include directory
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
 add_compile_options(-g -O3)
 
 
-# Build tests if enabled
-if(TEST)
-    add_subdirectory(test)
-endif()
-
 add_subdirectory(lib)
 add_subdirectory(src)
-
 
 
 
