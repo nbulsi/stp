@@ -10,7 +10,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 set(SOURCES stp.cpp)
 add_executable(stp ${SOURCES} ${FILENAMES})
-target_link_libraries(stp alice)
+target_link_libraries(stp PRIVATE alice)
 
 
 if(STP_ENABLE_CUDA AND CMAKE_CUDA_COMPILER)
@@ -19,27 +19,17 @@ if(STP_ENABLE_CUDA AND CMAKE_CUDA_COMPILER)
 endif()
 
 
-# Try to find Eigen3 on the system
-find_package(Eigen3 QUIET)
-message(STATUS "Eigen version: ${EIGEN3_VERSION}")
+if(STP_ENABLE_EIGEN)
+  find_package(Eigen3 QUIET)
+  if(NOT Eigen3_FOUND)
+    message(FATAL_ERROR
+      "STP_ENABLE_EIGEN=ON requires Eigen3. Install Eigen3 or configure CMake with "
+      "-DCMAKE_PREFIX_PATH=<eigen-install-prefix>.")
+  endif()
 
-# If Eigen3 is not found, use ExternalProject to clone and build Eigen3
-if(NOT Eigen3_FOUND)
-  message("-- Eigen3 is not found. Please clone and build from GitLab...")
-  message("git clone https://gitlab.com/libeigen/eigen.git")
-  message("cd eigen")
-  message("mkdir build")
-  message("cd build")
-  message("cmake ..")
-  message("make install")
-  message(FATAL_ERROR "Please visit https://eigen.tuxfamily.org/ for more details.")
-else()
-message("found")
-message(STATUS "Eigen3 found at: ${EIGEN3_INCLUDE_DIRS}")
- # Add Eigen3 include directory to stp target
-  target_include_directories(stp INTERFACE ${EIGEN3_INCLUDE_DIRS})
+  message(STATUS "Eigen reference backend enabled")
+  target_link_libraries(stp_lib INTERFACE Eigen3::Eigen)
+  target_compile_definitions(stp_lib INTERFACE STP_HAS_EIGEN=1)
 endif()
 
-find_package(OpenMP REQUIRED)
-target_link_libraries(stp OpenMP::OpenMP_CXX)
-target_link_libraries(stp  fmt Eigen3::Eigen pthread stp_lib)
+target_link_libraries(stp PRIVATE fmt pthread stp_lib)
