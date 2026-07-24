@@ -3,11 +3,8 @@
 
 #pragma once
 
-#include <Eigen/Dense>
-
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
 #include <bitset>
+#include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -16,9 +13,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-using matrix = Eigen::MatrixXi;           // Defines the type of matrix to use
-using matrix_chain = std::vector<matrix>; // Defined matrix chain
 
 using stp_data = uint32_t;
 using id = stp_data;
@@ -93,7 +87,7 @@ inline std::vector<std::string> parse_tokens(const std::string &input, const std
   return result;
 }
 
-inline void print_binary(const matrix &mat, std::ostream &os = std::cout)
+template <typename Matrix> inline void print_binary(const Matrix &mat, std::ostream &os = std::cout)
 {
   for (auto i = 0; i < mat.cols(); i++)
   {
@@ -101,7 +95,7 @@ inline void print_binary(const matrix &mat, std::ostream &os = std::cout)
   }
 }
 
-inline std::string to_binary(const matrix &mat)
+template <typename Matrix> inline std::string to_binary(const Matrix &mat)
 {
   std::stringstream st;
   print_binary(mat, st);
@@ -132,7 +126,7 @@ inline void print_hex(const std::string &binary_string, std::ostream &os = std::
   }
 }
 
-inline std::string to_hex(const matrix &mat)
+template <typename Matrix> inline std::string to_hex(const Matrix &mat)
 {
   std::stringstream st;
   print_hex(to_binary(mat), st);

@@ -6,6 +6,7 @@
 #include <alice/alice.hpp>
 #include <chrono>
 #include <fstream>
+#include <iomanip>
 #include <stp/core/circuit_graph.hpp>
 #include <stp/io/expr_parser.hpp>
 #include <stp/io/lut_parser.hpp>
@@ -34,11 +35,11 @@ class sim_command : public command
 public:
   explicit sim_command(const environment::ptr &env) : command(env, "sim")
   {
-    add_flag("--verbose", "verbose output");
+    add_flag("--verbose", "print the detailed input/output truth table");
     add_flag("--lut, -l", "using lut network");
     add_flag("--aig, -a", "using aig network");
     add_flag("--cuda, -c", "using cuda");
-    add_flag("--print, -p", "print result");
+    add_flag("--print, -p", "deprecated; the result summary is always printed");
     add_option("filename", filename, "input file name", true);
   }
 
@@ -78,37 +79,36 @@ protected:
 #ifdef ENABLE_CUDA
         _using_CUDA = true;
         Get_Total_Thread_Num();
-        simulator sim(graph);
-        auto start = std::chrono::high_resolution_clock::now();
-        sim.simulate();
-        auto end = std::chrono::high_resolution_clock::now();
-        auto time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        // print result
-        if (is_set("print") || is_set("-p"))
-        {
-          sim.print_simulation_result();
-        }
-        std::cout << "time: " << time / 1000 << " ms\n" << std::endl;
 #else
         std::cout << "can't find cuda" << std::endl;
+        return;
 #endif
       }
       else
       {
         _using_CUDA = false;
-        simulator sim(graph);
-        auto start = std::chrono::high_resolution_clock::now();
-        sim.simulate();
-        auto end = std::chrono::high_resolution_clock::now();
-        auto time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        // print result
-        if (is_set("print") || is_set("-p"))
-        {
-          sim.print_simulation_result();
-        }
-        std::cout << "time: " << std::fixed << std::setprecision(3)
-                  << static_cast<double>(time) / 1000.0 << " ms\n"
-                  << std::endl;
+      }
+
+      simulator sim(graph);
+      const auto start = std::chrono::high_resolution_clock::now();
+      sim.simulate();
+      const auto end = std::chrono::high_resolution_clock::now();
+      const auto time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+
+      std::cout << "\n****************************************\n";
+      std::cout << "Report : STP logic simulation\n";
+      std::cout << "Design : " << file_path << '\n';
+      std::cout << "----------------------------------------\n";
+      sim.print_simulation_summary();
+      std::cout << "----------------------------------------\n";
+      std::cout << "  Runtime : " << std::fixed << std::setprecision(3)
+                << static_cast<double>(time) / 1000.0 << " ms\n";
+      std::cout << "****************************************\n";
+
+      if (is_set("verbose"))
+      {
+        std::cout << "\nDetailed truth table\n";
+        sim.print_simulation_result();
       }
     }
     else

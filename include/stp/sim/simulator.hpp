@@ -4,6 +4,7 @@
 #include <bitset>
 #include <climits>
 #include <deque>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <random>
@@ -89,7 +90,38 @@ public:
     }
   }
 
+  void print_simulation_summary(std::ostream &os = std::cout) const
+  {
+    os << "  Inputs  : " << graph.get_inputs().size() << '\n';
+    os << "  Outputs : " << graph.get_outputs().size() << '\n';
+    os << "  Truth tables\n";
+
+    for (const auto &output_id : graph.get_outputs())
+    {
+      os << "    " << std::left << std::setw(16) << graph.get_lines()[output_id].name << " "
+         << output_truth_table_hex(output_id) << '\n';
+    }
+  }
+
 private:
+  std::string output_truth_table_hex(const line_idx output_id) const
+  {
+    std::string bits;
+    bits.reserve(pattern_num);
+    for (const auto value : sim_info[output_id])
+    {
+      bits.push_back(value == 0 ? '0' : '1');
+    }
+
+    const auto padding = (4 - bits.size() % 4) % 4;
+    bits.insert(0, padding, '0');
+
+    std::stringstream stream;
+    stream << "0x";
+    print_hex(bits, stream);
+    return stream.str();
+  }
+
   bool is_simulated(const line_idx id)
   {
     return sim_info[id].size() == pattern_num;

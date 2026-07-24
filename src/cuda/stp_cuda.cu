@@ -9,9 +9,6 @@
 #include <cuda_runtime_api.h>
 #include <cusparse.h>
 
-#include "eigen3/Eigen/Dense"
-#include "eigen3/Eigen/Sparse"
-
 #include <stp/sim/execute_cuda.hpp>
 
 uint64_t Total_Thread = 0; // total supported threads
