@@ -91,6 +91,14 @@ public:
   void print_simulation_summary(std::ostream &os = std::cout) const
   {
     os << "  Inputs  : " << graph.get_inputs().size() << '\n';
+    os << "  Input order (LSB -> MSB) : ";
+    for (size_t index = 0; index < graph.get_inputs().size(); ++index)
+    {
+      if (index != 0)
+        os << ", ";
+      os << graph.get_lines()[graph.get_inputs()[index]].name;
+    }
+    os << '\n';
     os << "  Outputs : " << graph.get_outputs().size() << '\n';
     os << "  Truth tables\n";
 

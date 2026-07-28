@@ -37,6 +37,10 @@ add_compile_options(-g -O3)
 add_subdirectory(lib)
 add_subdirectory(src)
 
+include(CTest)
+if(BUILD_TESTING)
+    add_subdirectory(test)
+endif()
 
 
 

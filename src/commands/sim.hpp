@@ -63,6 +63,18 @@ void simulate_and_report(CircuitGraph &graph, const std::string &design, const b
   }
 }
 
+std::string join_expression(const std::vector<std::string> &tokens)
+{
+  std::stringstream stream;
+  for (size_t i = 0; i < tokens.size(); ++i)
+  {
+    if (i != 0)
+      stream << ' ';
+    stream << tokens[i];
+  }
+  return stream.str();
+}
+
 std::vector<std::string> split_input_order(const std::string &input_order)
 {
   if (input_order.empty())
@@ -120,7 +132,7 @@ public:
     add_flag("--verbose", "print the detailed input/output truth table");
     add_flag("--cuda, -c", "use CUDA acceleration");
     add_option("--inputs", input_order, "comma-separated input order; the first name is the LSB");
-    add_option("expression", expression, "Lisp-style Boolean expression", true);
+    add_option("expression", expression_tokens, "Lisp-style Boolean expression", true);
   }
 
 protected:
@@ -129,7 +141,10 @@ protected:
     CircuitGraph graph;
     LogicExprParser parser;
     std::string error;
-    if (!parser.parse(expression, graph, error, split_input_order(input_order)))
+    const std::string expression = join_expression(expression_tokens);
+    const std::vector<std::string> requested_order =
+        is_set("inputs") ? split_input_order(input_order) : std::vector<std::string>{};
+    if (!parser.parse(expression, graph, error, requested_order))
     {
       std::cout << "can't parse expression: " << error << std::endl;
       return;
@@ -139,7 +154,7 @@ protected:
   }
 
 private:
-  std::string expression;
+  std::vector<std::string> expression_tokens;
   std::string input_order;
 };
 

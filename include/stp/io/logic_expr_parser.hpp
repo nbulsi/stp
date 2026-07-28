@@ -210,8 +210,10 @@ private:
       return "1";
     if (operation == "xor")
       return "6";
-    if (operation == "xnor")
+    if (operation == "xnor" || operation == "equ")
       return "9";
+    if (operation == "imply")
+      return "d";
     return {};
   }
 
