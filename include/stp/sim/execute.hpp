@@ -101,7 +101,7 @@ inline std::vector<stp_data> In_KR_Vec(stp_data dim, const std::vector<stp_data>
   return C;
 }
 
-std::vector<stp_data> Vec_KR_In(stp_data dim, const std::vector<stp_data> &A)
+inline std::vector<stp_data> Vec_KR_In(stp_data dim, const std::vector<stp_data> &A)
 {
   // get dimensions of matrix A
   stp_data A_row = A[0];
@@ -155,8 +155,8 @@ std::vector<stp_data> Vec_KR_In(stp_data dim, const std::vector<stp_data> &A)
 //     return C;
 // }
 
-std::vector<stp_data> Vec_semi_tensor_product(const std::vector<stp_data> &A,
-                                              const std::vector<stp_data> &B)
+inline std::vector<stp_data> Vec_semi_tensor_product(const std::vector<stp_data> &A,
+                                                     const std::vector<stp_data> &B)
 {
   // get dimensions of matrix A and B
   stp_data A_row = A[0];
@@ -205,7 +205,8 @@ std::vector<stp_data> Vec_semi_tensor_product(const std::vector<stp_data> &A,
   }
 }
 
-std::vector<stp_data> Vec_chain_multiply(std::vector<std::vector<stp_data>> &mc, bool verbose)
+inline std::vector<stp_data> Vec_chain_multiply(std::vector<std::vector<stp_data>> &mc,
+                                                bool verbose)
 {
   std::vector<stp_data> result = mc[0];
 

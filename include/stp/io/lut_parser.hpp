@@ -22,6 +22,9 @@ public:
 
     while (std::getline(is, line))
     {
+      if (!line.empty() && line.back() == '\r')
+        line.pop_back();
+
       if (line.find(isLut) != std::string::npos)
       {
         match_gate(graph, line);

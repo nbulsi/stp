@@ -11,4 +11,8 @@ Welcome to STP-based Logic Synthesis Tool's documentation!
    :caption: Contents:
 
    about
+   quickstart
+   expressions
+   simulation
+   testing
    stp_compute
