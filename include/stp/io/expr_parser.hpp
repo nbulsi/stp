@@ -12,7 +12,7 @@
 
 #define STP_K 2
 
-bool _using_CUDA = false;
+inline bool _using_CUDA = false;
 
 namespace stp
 {

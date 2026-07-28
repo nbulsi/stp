@@ -11,17 +11,7 @@ More comiplers are going to be tested.
 Using stp as a stand-alone tool
 -------------------------------
 
-We use ``eigen`` library for matrix computation, so please install it
-before running this project::
-
- git clone https://gitlab.com/libeigen/eigen.git
- cd eigen
- mkdir build
- cd build
- cmake ..
- make install
-
-Then you can clone ``stp`` project and compile it::
+Clone ``stp`` project and compile it::
 
  git clone https://gitee.com/zfchu/stp.git   (Gitee repository)
  git clone https://github.com/nbulsi/stp.git (GitHub repository) 

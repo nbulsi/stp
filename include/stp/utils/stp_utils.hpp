@@ -5,102 +5,17 @@
 
 #include <bitset>
 #include <cassert>
-#include <chrono>
 #include <cstdint>
 #include <iostream>
-#include <numeric>
-#include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 using stp_data = uint32_t;
 using id = stp_data;
 using stp_expr = std::vector<id>;
 
-static std::vector<std::string> m_split(const std::string &input, const std::string &pred)
-{
-  std::vector<std::string> result;
-  std::string temp{""};
-  unsigned count1 = input.size();
-  unsigned count2 = pred.size();
-  unsigned j;
-  for (size_t i = 0; i < count1; i++)
-  {
-    for (j = 0; j < count2; j++)
-    {
-      if (input[i] == pred[j])
-      {
-        break;
-      }
-    }
-    if (j == count2)
-      temp += input[i];
-    else
-    {
-      if (!temp.empty())
-      {
-        result.push_back(temp);
-        temp.clear();
-      }
-    }
-  }
-  return result;
-}
-
-static void seg_fault(const std::string &name, int size, int idx)
-{
-  std::cout << name << "  " << size << " : " << idx << std::endl;
-}
-
 namespace stp
 {
-
-inline unsigned get_lcm(unsigned m, unsigned n)
-{
-  return (m * n) / std::gcd(m, n);
-}
-
-inline void print_strings(const std::vector<std::string> &inputs)
-{
-  for (auto s : inputs)
-  {
-    std::cout << " " << s << " ";
-  }
-  std::cout << std::endl;
-}
-
-inline std::vector<std::string> parse_tokens(const std::string &input, const std::string &prefix)
-{
-  std::istringstream iss(input);
-  std::string token;
-  std::vector<std::string> result;
-
-  while (iss >> token)
-  {
-    if (token.compare(0, prefix.size(), prefix) == 0)
-    {
-      result.push_back(token);
-    }
-  }
-
-  return result;
-}
-
-template <typename Matrix> inline void print_binary(const Matrix &mat, std::ostream &os = std::cout)
-{
-  for (auto i = 0; i < mat.cols(); i++)
-  {
-    os << mat(0, i);
-  }
-}
-
-template <typename Matrix> inline std::string to_binary(const Matrix &mat)
-{
-  std::stringstream st;
-  print_binary(mat, st);
-  return st.str();
-}
 
 inline void print_hex(const std::string &binary_string, std::ostream &os = std::cout)
 {
@@ -126,40 +41,29 @@ inline void print_hex(const std::string &binary_string, std::ostream &os = std::
   }
 }
 
-template <typename Matrix> inline std::string to_hex(const Matrix &mat)
-{
-  std::stringstream st;
-  print_hex(to_binary(mat), st);
-  return st.str();
-}
-
-inline std::vector<std::string> str_split(const std::string &input, const std::string &pred)
+inline std::vector<std::string> split(const std::string &input, const std::string &delimiters)
 {
   std::vector<std::string> result;
-  std::string temp{""};
-  unsigned count1 = input.size();
-  unsigned count2 = pred.size();
-  unsigned j;
-  for (size_t i = 0; i < count1; i++)
+  std::string token;
+
+  for (const char character : input)
   {
-    for (j = 0; j < count2; j++)
+    if (delimiters.find(character) == std::string::npos)
     {
-      if (input[i] == pred[j])
-      {
-        break;
-      }
+      token += character;
+      continue;
     }
-    if (j == count2)
-      temp += input[i];
-    else
+
+    if (!token.empty())
     {
-      if (!temp.empty())
-      {
-        result.push_back(temp);
-        temp.clear();
-      }
+      result.push_back(token);
+      token.clear();
     }
   }
+
+  if (!token.empty())
+    result.push_back(token);
+
   return result;
 }
 } // namespace stp

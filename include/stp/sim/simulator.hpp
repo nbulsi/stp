@@ -20,8 +20,6 @@
 using need_sim_nodes = std::deque<gate_idx>;
 using line_sim_info = std::vector<u_int16_t>;
 
-using namespace stp;
-
 class simulator
 {
 public:
@@ -93,6 +91,14 @@ public:
   void print_simulation_summary(std::ostream &os = std::cout) const
   {
     os << "  Inputs  : " << graph.get_inputs().size() << '\n';
+    os << "  Input order (LSB -> MSB) : ";
+    for (size_t index = 0; index < graph.get_inputs().size(); ++index)
+    {
+      if (index != 0)
+        os << ", ";
+      os << graph.get_lines()[graph.get_inputs()[index]].name;
+    }
+    os << '\n';
     os << "  Outputs : " << graph.get_outputs().size() << '\n';
     os << "  Truth tables\n";
 
@@ -118,7 +124,7 @@ private:
 
     std::stringstream stream;
     stream << "0x";
-    print_hex(bits, stream);
+    stp::print_hex(bits, stream);
     return stream.str();
   }
 
@@ -210,7 +216,7 @@ private:
     const gate_idx &output = node.get_output();
     std::map<line_idx, int> map;
     // m_chain matrix_chain;
-    std::vector<expr_node> lut_chain;
+    std::vector<stp::expr_node> lut_chain;
     get_node_matrix(node_id, lut_chain, map);
     std::vector<int64_t> old_pi_index(map.size());
 
@@ -219,7 +225,7 @@ private:
       old_pi_index[i] = i;
     }
 
-    expr_chain_parser lut(lut_chain, old_pi_index);
+    stp::expr_chain_parser lut(lut_chain, old_pi_index);
     std::vector<stp_data> root_stp_vec = lut.out_vec;
     std::vector<line_idx> variable(map.size());
     int inputs_number = variable.size();
@@ -242,12 +248,12 @@ private:
     lines_flag[output] = true;
   }
 
-  void get_node_matrix(const gate_idx node_id, std::vector<expr_node> &lut_chain,
+  void get_node_matrix(const gate_idx node_id, std::vector<stp::expr_node> &lut_chain,
                        std::map<line_idx, int> &map)
   {
     const auto &node = graph.get_gates()[node_id];
 
-    lut_chain.emplace_back(NodeType_Gate, GateType_Lut, 0, 0, node.get_type().vec);
+    lut_chain.emplace_back(stp::NodeType_Gate, stp::GateType_Lut, 0, 0, node.get_type().vec);
 
     int temp;
     for (const auto &line_id : node.get_inputs())
@@ -261,7 +267,7 @@ private:
         }
         else
           temp = map.at(line_id);
-        expr_node new_var(NodeType_Variable, temp - 1);
+        stp::expr_node new_var(stp::NodeType_Variable, temp - 1);
         lut_chain.emplace_back(new_var);
       }
       else

@@ -22,6 +22,9 @@ public:
 
     while (std::getline(is, line))
     {
+      if (!line.empty() && line.back() == '\r')
+        line.pop_back();
+
       if (line.find(isLut) != std::string::npos)
       {
         match_gate(graph, line);
@@ -58,7 +61,7 @@ private:
 
   void match_gate(CircuitGraph &graph, const std::string &line)
   {
-    std::vector<std::string> gate = m_split(line, ",=( )");
+    std::vector<std::string> gate = stp::split(line, ",=( )");
     std::string output = gate[0];
     std::string tt = gate[2];
     gate.erase(gate.begin(), gate.begin() + 3);
