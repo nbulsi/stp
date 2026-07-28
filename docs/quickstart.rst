@@ -2,13 +2,13 @@ Quick Start
 ===========
 
 STP is a C++17 logic-simulation tool built around semi-tensor-product (STP)
-evaluation.  The default build uses the compressed-vector implementation; an
-Eigen reference backend and CUDA acceleration are optional.
+evaluation.  The default build uses the compressed-vector implementation;
+CUDA acceleration is optional.
 
 Build
 -----
 
-The default build has no Eigen or CUDA requirement::
+The default build has no CUDA requirement::
 
   git clone https://github.com/nbulsi/stp.git
   cd stp
@@ -21,15 +21,6 @@ The resulting interactive executable is ``build/bin/stp``.  Start it with::
 
 Optional backends
 -----------------
-
-Enable the Eigen reference backend when validating the compressed-vector
-implementation::
-
-  cmake -S . -B build/eigen -DSTP_ENABLE_EIGEN=ON
-  cmake --build build/eigen --parallel
-
-If Eigen is installed outside CMake's default search locations, pass its
-prefix with ``-DCMAKE_PREFIX_PATH=/path/to/eigen``.
 
 Enable CUDA only on a system with a compatible NVIDIA driver and CUDA Toolkit::
 

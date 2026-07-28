@@ -13,7 +13,6 @@ set(CMAKE_CXX_STANDARD ${STP_CXX_STANDARD})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(STP_ENABLE_CUDA "Enable CUDA acceleration backend" OFF)
-option(STP_ENABLE_EIGEN "Enable the Eigen reference backend" OFF)
 
 # Handle CUDA support
 if(STP_ENABLE_CUDA)
@@ -41,7 +40,6 @@ include(CTest)
 if(BUILD_TESTING)
     add_subdirectory(test)
 endif()
-
 
 
 

@@ -15,4 +15,3 @@ Welcome to STP-based Logic Synthesis Tool's documentation!
    expressions
    simulation
    testing
-   stp_compute
