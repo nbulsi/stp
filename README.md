@@ -7,7 +7,7 @@ The default implementation uses a compressed-vector representation for logic sim
 
 CUDA acceleration is available as an optional backend for larger workloads.
 
-[Read the full documentation.](https://stp-based-logic-synthesis-tool.readthedocs.io/en/latest/ )
+[Read the full documentation.](https://stp-based-logic-synthesis.readthedocs.io/en/latest/)
 
 ## Build
 
