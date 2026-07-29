@@ -1,0 +1,7 @@
+INPUT(a)
+INPUT(b)
+INPUT(c)
+OUTPUT(po)
+
+dsd_n0 = LUT 0xa (a, b)
+po = LUT 0x8 (c, dsd_n0)

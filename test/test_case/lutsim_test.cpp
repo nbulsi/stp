@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include <stp/dsd/decomposer.hpp>
 #include <stp/io/lut_parser.hpp>
 #include <stp/sim/simulator.hpp>
 
@@ -64,4 +65,27 @@ TEST_CASE("lutsim simulates bundled LF benchmarks", "[lutsim][regression]")
     REQUIRE(input.good());
     CHECK(simulate_lut_bench(input).find(truth_table) != std::string::npos);
   }
+}
+
+TEST_CASE("dsd decomposes and writes a functionally equivalent BENCH", "[dsd]")
+{
+  const std::string filename = "/tmp/stp_dsd_regression.bench";
+  stp::DsdDecomposer decomposer;
+  const auto result = decomposer.run("0xA0", {"c", "b", "a"}, "po", filename);
+  REQUIRE(result.valid);
+  CHECK(result.expression == "0x8(c, 0xa(a, b))");
+
+  std::ifstream input(filename);
+  REQUIRE(input.good());
+  CircuitGraph graph;
+  LutParser parser;
+  REQUIRE(parser.parse(input, graph));
+
+  _using_CUDA = false;
+  simulator sim(graph);
+  REQUIRE(sim.simulate());
+  std::ostringstream report;
+  sim.print_simulation_summary(report);
+  CHECK(report.str().find("0xA0") != std::string::npos);
+  std::remove(filename.c_str());
 }
