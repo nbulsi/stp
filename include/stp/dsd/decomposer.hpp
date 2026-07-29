@@ -533,8 +533,8 @@ private:
     const std::string my = lut_hex(make_type(candidate.inner_truth));
     return "B=" + set_string(candidate.bound) + " F=" + set_string(candidate.free) + " MX=" + mx +
            " MY=" + my + "\n             " + output_name + " = " + final_expression +
-           "\n             nodes = " + std::to_string(nodes) +
-           ", logic levels = " + std::to_string(logic_levels);
+           "\n             #nodes = " + std::to_string(nodes) +
+           ", #levels = " + std::to_string(logic_levels);
   }
 
   std::string decompose(CircuitGraph &target_graph, const std::vector<unsigned char> &truth,

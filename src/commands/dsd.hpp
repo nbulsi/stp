@@ -115,7 +115,12 @@ protected:
       env->out() << "[e] " << result.error << std::endl;
       return;
     }
-    env->out() << "[i] " << result.solutions.size() << " ACD solutions found. " << std::endl;
+
+    if (enumerate_all)
+    {
+      env->out() << "[i] " << result.solutions.size() << " ACD solutions found. " << std::endl;
+    }
+
     for (size_t index = 0; index < result.solutions.size(); ++index)
       env->out() << "[solution " << index << "] " << result.solutions[index] << std::endl
                  << std::endl;
