@@ -5,6 +5,8 @@
 
 #include <alice/alice.hpp>
 #include <cctype>
+#include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stp/dsd/decomposer.hpp>
@@ -79,6 +81,8 @@ public:
     add_option("--inputs", inputs, "comma-separated variables in MSB-to-LSB order");
     add_option("--output", output, "output name", false);
     add_option("--filename,-o", filename, "output BENCH filename", false);
+    add_option("--threads", threads, "candidate-search threads; 0 means automatic", false);
+    add_flag("--enumerate", "enumerate all feasible ACD decompositions");
   }
 
 protected:
@@ -100,14 +104,27 @@ protected:
     }
 
     stp::DsdDecomposer decomposer;
-    const auto result = decomposer.run(truth_table, variables_msb, output, filename);
+    const auto start = std::chrono::high_resolution_clock::now();
+    const bool enumerate_all = is_set("enumerate");
+    const auto result =
+        decomposer.run(truth_table, variables_msb, output, filename, threads, enumerate_all);
+    const auto end = std::chrono::high_resolution_clock::now();
+    const auto time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     if (!result.valid)
     {
       env->out() << "[e] " << result.error << std::endl;
       return;
     }
-    env->out() << output << " = " << result.expression << std::endl;
+    env->out() << "[i] " << result.solutions.size() << " ACD solutions found. " << std::endl;
+    for (size_t index = 0; index < result.solutions.size(); ++index)
+      env->out() << "[solution " << index << "] " << result.solutions[index] << std::endl
+                 << std::endl;
+    env->out() << "[i] expr: " << output << " = " << result.expression << std::endl;
+    env->out() << "[i] #nodes = " << result.nodes << ", #levels = " << result.logic_levels
+               << std::endl;
     env->out() << "[i] DSD result written to " << filename << std::endl;
+    env->out() << "[i] Runtime : " << std::fixed << std::setprecision(3)
+               << static_cast<double>(time) / 1000.0 << " ms" << std::endl;
   }
 
 private:
@@ -115,6 +132,7 @@ private:
   std::string inputs;
   std::string output = "po";
   std::string filename = "result.bench";
+  unsigned threads = 1;
 };
 
 ALICE_ADD_COMMAND(dsd, "Decomposition");

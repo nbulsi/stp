@@ -89,3 +89,27 @@ TEST_CASE("dsd decomposes and writes a functionally equivalent BENCH", "[dsd]")
   CHECK(report.str().find("0xA0") != std::string::npos);
   std::remove(filename.c_str());
 }
+
+TEST_CASE("dsd enumeration preserves variables in recursive expressions", "[dsd]")
+{
+  const std::string filename = "/tmp/stp_dsd_enumeration_regression.bench";
+  stp::DsdDecomposer decomposer;
+  const auto result = decomposer.run("0x8000", {"d", "c", "b", "a"}, "po", filename, 1, true);
+  REQUIRE(result.valid);
+  REQUIRE(!result.solutions.empty());
+  CHECK(result.solutions[0].find("po = 0x8(0x8(a, b), 0x8(c, d))") != std::string::npos);
+
+  std::ifstream input(filename);
+  REQUIRE(input.good());
+  CircuitGraph graph;
+  LutParser parser;
+  REQUIRE(parser.parse(input, graph));
+
+  _using_CUDA = false;
+  simulator sim(graph);
+  REQUIRE(sim.simulate());
+  std::ostringstream report;
+  sim.print_simulation_summary(report);
+  CHECK(report.str().find("0x8000") != std::string::npos);
+  std::remove(filename.c_str());
+}
