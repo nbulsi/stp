@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include <stp/dsd/approximate_decomposer.hpp>
 #include <stp/dsd/decomposer.hpp>
 #include <stp/io/lut_parser.hpp>
 #include <stp/sim/simulator.hpp>
@@ -111,5 +112,63 @@ TEST_CASE("dsd enumeration preserves variables in recursive expressions", "[dsd]
   std::ostringstream report;
   sim.print_simulation_summary(report);
   CHECK(report.str().find("0x8000") != std::string::npos);
+  std::remove(filename.c_str());
+}
+
+TEST_CASE("idsd completes don't-care entries while preserving specified values", "[idsd]")
+{
+  const std::string filename = "/tmp/stp_idsd_regression.bench";
+  stp::DsdDecomposer decomposer;
+  const auto result =
+      decomposer.run_incomplete("101-0011", {"c", "b", "a"}, "po", filename, 1, true);
+  REQUIRE(result.valid);
+  REQUIRE(!result.solutions.empty());
+
+  std::ifstream input(filename);
+  REQUIRE(input.good());
+  CircuitGraph graph;
+  LutParser parser;
+  REQUIRE(parser.parse(input, graph));
+
+  _using_CUDA = false;
+  simulator sim(graph);
+  REQUIRE(sim.simulate());
+  std::ostringstream report;
+  sim.print_simulation_summary(report);
+  // The selected completion is 10110011; the fourth entry was don't-care.
+  CHECK(report.str().find("0xB3") != std::string::npos);
+  std::remove(filename.c_str());
+}
+
+TEST_CASE("approximate dsd finds a zero-error decomposition", "[approximate_dsd]")
+{
+  const std::string filename = "/tmp/stp_approximate_dsd_regression.bench";
+  stp::ApproximateDsdDecomposer decomposer;
+  const auto result = decomposer.run("0xA0", {"c", "b", "a"}, "po", filename, 2);
+  REQUIRE(result.valid);
+  CHECK(result.hamming_distance == 0);
+  CHECK(result.nodes == 2);
+  std::remove(filename.c_str());
+}
+
+TEST_CASE("approximate dsd reports the distance of the emitted BENCH", "[approximate_dsd]")
+{
+  const std::string filename = "/tmp/stp_approximate_dsd_distance.bench";
+  stp::ApproximateDsdDecomposer decomposer;
+  const auto result = decomposer.run("0x1234", {"d", "c", "b", "a"}, "po", filename, 1, 1);
+  REQUIRE(result.valid);
+  CHECK(result.hamming_distance == 1);
+
+  std::ifstream input(filename);
+  REQUIRE(input.good());
+  CircuitGraph graph;
+  LutParser parser;
+  REQUIRE(parser.parse(input, graph));
+  _using_CUDA = false;
+  simulator sim(graph);
+  REQUIRE(sim.simulate());
+  std::ostringstream report;
+  sim.print_simulation_summary(report);
+  CHECK(report.str().find("0x1230") != std::string::npos);
   std::remove(filename.c_str());
 }

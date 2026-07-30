@@ -92,7 +92,8 @@ std::vector<std::string> split_input_order(const std::string &input_order)
 class lutsim_command : public command
 {
 public:
-  explicit lutsim_command(const environment::ptr &env) : command(env, "lutsim")
+  explicit lutsim_command(const environment::ptr &env)
+      : command(env, "Simulate a LUT BENCH circuit and print truth tables")
   {
     add_flag("--verbose", "print the detailed input/output truth table");
     add_flag("--cuda, -c", "use CUDA acceleration");
@@ -127,7 +128,8 @@ private:
 class exprsim_command : public command
 {
 public:
-  explicit exprsim_command(const environment::ptr &env) : command(env, "exprsim")
+  explicit exprsim_command(const environment::ptr &env)
+      : command(env, "Simulate a Boolean expression and print its truth table")
   {
     add_flag("--verbose", "print the detailed input/output truth table");
     add_flag("--cuda, -c", "use CUDA acceleration");

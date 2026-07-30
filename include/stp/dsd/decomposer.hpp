@@ -148,6 +148,40 @@ public:
     if (!parse_truth_table(truth_table, 1U << variables_msb.size(), truth))
       return {false, "truth table must be a hexadecimal value with 2^n bits"};
 
+    return run_truth(truth, variables_msb, output_name, bench_filename, thread_count,
+                     enumerate_all);
+  }
+
+  DsdResult run_incomplete(const std::string &truth_table,
+                           const std::vector<std::string> &variables_msb,
+                           const std::string &output_name, const std::string &bench_filename,
+                           unsigned thread_count = 0, bool enumerate_all = false)
+  {
+    if (variables_msb.empty() || variables_msb.size() > 20)
+      return {false, "the number of variables must be between 1 and 20"};
+
+    for (const auto &name : variables_msb)
+      if (name.empty())
+        return {false, "variable names must not be empty"};
+
+    std::unordered_set<std::string> names(variables_msb.begin(), variables_msb.end());
+    if (names.size() != variables_msb.size())
+      return {false, "variable names must be unique"};
+
+    std::vector<unsigned char> truth;
+    if (!parse_incomplete_truth_table(truth_table, 1U << variables_msb.size(), truth))
+      return {false, "truth table must contain only 0, 1, and - and have 2^n entries"};
+
+    return run_truth(truth, variables_msb, output_name, bench_filename, thread_count,
+                     enumerate_all);
+  }
+
+private:
+  DsdResult run_truth(const std::vector<unsigned char> &truth,
+                      const std::vector<std::string> &variables_msb, const std::string &output_name,
+                      const std::string &bench_filename, unsigned thread_count, bool enumerate_all)
+  {
+
     // CircuitGraph/bench input declarations follow the user-facing order
     // (LSB -> MSB), while the decomposition algorithm uses MSB -> LSB.
     for (auto it = variables_msb.rbegin(); it != variables_msb.rend(); ++it)
@@ -228,8 +262,6 @@ public:
     result.logic_levels = selected_levels;
     return result;
   }
-
-private:
   struct Candidate
   {
     std::vector<unsigned char> inner_truth;
@@ -274,12 +306,34 @@ private:
     return true;
   }
 
+  static bool parse_incomplete_truth_table(const std::string &text, size_t length,
+                                           std::vector<unsigned char> &truth)
+  {
+    if (text.size() != length)
+      return false;
+    truth.clear();
+    truth.reserve(length);
+    for (const char c : text)
+    {
+      if (c == '0')
+        truth.push_back(0);
+      else if (c == '1')
+        truth.push_back(1);
+      else if (c == '-')
+        truth.push_back(2);
+      else
+        return false;
+    }
+    return true;
+  }
+
   static stp_vec make_type(const std::vector<unsigned char> &truth)
   {
     stp_vec type(truth.size() + 1);
     type(0) = 2;
     for (size_t i = 0; i < truth.size(); ++i)
-      type(static_cast<unsigned>(i + 1)) = 1U - truth[i];
+      // A don't-care is completed to zero when a concrete LUT is emitted.
+      type(static_cast<unsigned>(i + 1)) = truth[i] == 1 ? 0 : 1;
     return type;
   }
 
@@ -363,7 +417,24 @@ private:
     {
       std::vector<unsigned char> block(reordered.begin() + i * block_length,
                                        reordered.begin() + (i + 1) * block_length);
-      auto it = std::find(patterns.begin(), patterns.end(), block);
+      auto compatible =
+          [](const std::vector<unsigned char> &left, const std::vector<unsigned char> &right)
+      {
+        for (size_t position = 0; position < left.size(); ++position)
+          if (left[position] != 2 && right[position] != 2 && left[position] != right[position])
+            return false;
+        return true;
+      };
+      auto merge = [](std::vector<unsigned char> pattern, const std::vector<unsigned char> &block)
+      {
+        for (size_t position = 0; position < pattern.size(); ++position)
+          if (pattern[position] == 2)
+            pattern[position] = block[position];
+        return pattern;
+      };
+
+      auto it = std::find_if(patterns.begin(), patterns.end(),
+                             [&](const auto &pattern) { return compatible(pattern, block); });
       if (it == patterns.end())
       {
         if (patterns.size() == 2)
@@ -374,7 +445,11 @@ private:
         selectors.push_back(static_cast<unsigned char>(patterns.size() == 1 ? 1 : 0));
       }
       else
-        selectors.push_back(static_cast<unsigned char>(it == patterns.begin() ? 1 : 0));
+      {
+        const size_t pattern_index = static_cast<size_t>(it - patterns.begin());
+        *it = merge(*it, block);
+        selectors.push_back(static_cast<unsigned char>(pattern_index == 0 ? 1 : 0));
+      }
     }
     if (patterns.size() != 2 || selectors.size() != (1ULL << m))
       return false;
