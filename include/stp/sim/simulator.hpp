@@ -4,24 +4,110 @@
 #pragma once
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <stp/core/circuit_graph.hpp>
 #include <stp/io/expr_parser.hpp> // compatibility: exposes the legacy CUDA mode flag
+
+class SimulationThreadPool
+{
+public:
+  explicit SimulationThreadPool(const unsigned worker_count) : worker_count(worker_count)
+  {
+    workers.reserve(worker_count);
+    for (unsigned id = 0; id < worker_count; ++id)
+      workers.emplace_back([this, id]() { worker_loop(id); });
+  }
+
+  ~SimulationThreadPool()
+  {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      stopping = true;
+    }
+    work_available.notify_all();
+    for (auto &worker : workers)
+      worker.join();
+  }
+
+  void parallel_for(const size_t count, const std::function<void(size_t, size_t)> &function)
+  {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      current_count = count;
+      current_function = function;
+      active_workers = worker_count;
+      ++generation;
+    }
+    work_available.notify_all();
+
+    std::unique_lock<std::mutex> lock(mutex);
+    work_finished.wait(lock, [this]() { return active_workers == 0; });
+  }
+
+private:
+  void worker_loop(const unsigned id)
+  {
+    size_t seen_generation = 0;
+    while (true)
+    {
+      std::function<void(size_t, size_t)> function;
+      size_t count = 0;
+      size_t task_generation = 0;
+      {
+        std::unique_lock<std::mutex> lock(mutex);
+        work_available.wait(lock, [this, seen_generation]()
+                            { return stopping || generation != seen_generation; });
+        if (stopping)
+          return;
+        task_generation = generation;
+        count = current_count;
+        function = current_function;
+      }
+
+      const size_t begin = (count * id) / worker_count;
+      const size_t end = (count * (id + 1)) / worker_count;
+      function(begin, end);
+
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        seen_generation = task_generation;
+        if (--active_workers == 0)
+          work_finished.notify_one();
+      }
+    }
+  }
+
+  unsigned worker_count;
+  std::vector<std::thread> workers;
+  std::mutex mutex;
+  std::condition_variable work_available;
+  std::condition_variable work_finished;
+  std::function<void(size_t, size_t)> current_function;
+  size_t current_count = 0;
+  size_t generation = 0;
+  unsigned active_workers = 0;
+  bool stopping = false;
+};
 
 // Truth tables are stored in bit-sliced form.  One machine word evaluates 64
 // input assignments at once, instead of storing one uint16_t per assignment.
 class simulator
 {
 public:
-  explicit simulator(CircuitGraph &graph) : graph(graph)
+  explicit simulator(CircuitGraph &graph, unsigned requested_threads = 0) : graph(graph)
   {
     const auto line_count = graph.get_lines().size();
     sim_info.resize(line_count);
@@ -33,6 +119,16 @@ public:
 
     pattern_num = size_t{1} << active_inputs.size();
     word_num = (pattern_num + word_bits - 1) / word_bits;
+
+    thread_count = requested_threads == 0 ? std::min(8u, std::thread::hardware_concurrency())
+                                          : requested_threads;
+    if (thread_count == 0)
+      thread_count = 1;
+    thread_count = static_cast<unsigned>(std::min<size_t>(thread_count, word_num));
+    if (thread_count > 1 && word_num >= parallel_word_threshold)
+      thread_pool = std::make_unique<SimulationThreadPool>(thread_count);
+    else
+      thread_count = 1;
   }
 
   bool simulate()
@@ -101,6 +197,7 @@ public:
     }
     os << '\n';
     os << "  Outputs : " << graph.get_outputs().size() << '\n';
+    os << "  Threads : " << thread_count << '\n';
     if (!print_truth_tables)
     {
       os << "  Truth tables : not printed\n";
@@ -116,6 +213,7 @@ public:
 
 private:
   static constexpr size_t word_bits = 64;
+  static constexpr size_t parallel_word_threshold = 4096;
   static unsigned value_at(const std::vector<uint64_t> &table, const size_t pattern)
   {
     return static_cast<unsigned>((table[pattern / word_bits] >> (pattern % word_bits)) & 1u);
@@ -156,16 +254,23 @@ private:
 
   void initialize_inputs()
   {
+    static constexpr uint64_t low_bit_patterns[] = {0x5555555555555555ULL, 0x3333333333333333ULL,
+                                                    0x0F0F0F0F0F0F0F0FULL, 0x00FF00FF00FF00FFULL,
+                                                    0x0000FFFF0000FFFFULL, 0x00000000FFFFFFFFULL};
+
     for (size_t input_index = 0; input_index < active_inputs.size(); ++input_index)
     {
       auto &table = sim_info[active_inputs[input_index]];
-      table.assign(word_num, 0);
-      for (size_t pattern = 0; pattern < pattern_num; ++pattern)
+      table.resize(word_num);
+      if (input_index < 6)
       {
-        const size_t assignment = pattern_num - 1 - pattern;
-        if ((assignment >> input_index) & 1u)
-          table[pattern / word_bits] |= uint64_t{1} << (pattern % word_bits);
+        std::fill(table.begin(), table.end(), low_bit_patterns[input_index]);
+        continue;
       }
+
+      const size_t word_bit = input_index - 6;
+      for (size_t word_index = 0; word_index < word_num; ++word_index)
+        table[word_index] = ((word_index >> word_bit) & 1u) ? 0 : ~uint64_t{0};
     }
   }
 
@@ -178,23 +283,33 @@ private:
     output.assign(word_num, 0);
 
     const size_t combinations = size_t{1} << inputs.size();
-    for (size_t truth_index = 0; truth_index < combinations; ++truth_index)
+    const auto evaluate_words = [&](const size_t begin, const size_t end)
     {
-      // stp_vec stores the complement of each Boolean truth-table entry.
-      if (type(combinations - truth_index) != 0)
-        continue;
-      for (size_t word_index = 0; word_index < word_num; ++word_index)
+      for (size_t word_index = begin; word_index < end; ++word_index)
       {
-        uint64_t minterm = ~uint64_t{0};
-        for (size_t input_index = 0; input_index < inputs.size(); ++input_index)
+        uint64_t result = 0;
+        for (size_t truth_index = 0; truth_index < combinations; ++truth_index)
         {
-          const bool one = (truth_index >> (inputs.size() - 1 - input_index)) & 1u;
-          const uint64_t value = sim_info[inputs[input_index]][word_index];
-          minterm &= one ? value : ~value;
+          // stp_vec stores the complement of each Boolean truth-table entry.
+          if (type(combinations - truth_index) != 0)
+            continue;
+          uint64_t minterm = ~uint64_t{0};
+          for (size_t input_index = 0; input_index < inputs.size(); ++input_index)
+          {
+            const bool one = (truth_index >> (inputs.size() - 1 - input_index)) & 1u;
+            const uint64_t value = sim_info[inputs[input_index]][word_index];
+            minterm &= one ? value : ~value;
+          }
+          result |= minterm;
         }
-        output[word_index] |= minterm;
+        output[word_index] = result;
       }
-    }
+    };
+
+    if (thread_pool)
+      thread_pool->parallel_for(word_num, evaluate_words);
+    else
+      evaluate_words(0, word_num);
 
     const size_t valid_bits = pattern_num % word_bits;
     if (valid_bits != 0)
@@ -228,7 +343,9 @@ private:
   std::vector<std::vector<uint64_t>> sim_info;
   std::vector<line_idx> active_inputs;
   std::vector<bool> live_gate;
+  std::unique_ptr<SimulationThreadPool> thread_pool;
   CircuitGraph &graph;
   size_t pattern_num = 0;
   size_t word_num = 0;
+  unsigned thread_count = 1;
 };

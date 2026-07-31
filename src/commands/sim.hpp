@@ -39,9 +39,9 @@ bool configure_cuda(const bool use_cuda)
 }
 
 void simulate_and_report(CircuitGraph &graph, const std::string &design, const bool verbose,
-                         const bool print_truth_tables)
+                         const bool print_truth_tables, const unsigned threads)
 {
-  simulator sim(graph);
+  simulator sim(graph, threads);
   const auto start = std::chrono::high_resolution_clock::now();
   sim.simulate();
   const auto end = std::chrono::high_resolution_clock::now();
@@ -99,6 +99,7 @@ public:
     add_flag("--verbose", "print the detailed input/output truth table");
     add_flag("--no-truth-table", "do not print output truth tables");
     add_flag("--cuda, -c", "use CUDA acceleration");
+    add_option("--threads", threads, "simulation threads; 0 means automatic", true);
     add_option("filename", filename, "input bench file", true);
   }
 
@@ -120,11 +121,12 @@ protected:
       return;
     }
     if (configure_cuda(is_set("cuda") || is_set("-c")))
-      simulate_and_report(graph, filename, is_set("verbose"), !is_set("no-truth-table"));
+      simulate_and_report(graph, filename, is_set("verbose"), !is_set("no-truth-table"), threads);
   }
 
 private:
   std::string filename;
+  unsigned threads = 0;
 };
 
 class exprsim_command : public command
@@ -136,6 +138,7 @@ public:
     add_flag("--verbose", "print the detailed input/output truth table");
     add_flag("--no-truth-table", "do not print output truth tables");
     add_flag("--cuda, -c", "use CUDA acceleration");
+    add_option("--threads", threads, "simulation threads; 0 means automatic", true);
     add_option("--inputs", input_order, "comma-separated input order; the first name is the LSB");
     add_option("expression", expression_tokens, "Lisp-style Boolean expression", true);
   }
@@ -155,12 +158,13 @@ protected:
       return;
     }
     if (configure_cuda(is_set("cuda") || is_set("-c")))
-      simulate_and_report(graph, expression, is_set("verbose"), !is_set("no-truth-table"));
+      simulate_and_report(graph, expression, is_set("verbose"), !is_set("no-truth-table"), threads);
   }
 
 private:
   std::vector<std::string> expression_tokens;
   std::string input_order;
+  unsigned threads = 0;
 };
 
 ALICE_ADD_COMMAND(lutsim, "Simulation");

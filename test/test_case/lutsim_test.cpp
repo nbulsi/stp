@@ -102,6 +102,30 @@ TEST_CASE("lutsim abbreviates an all-zero output", "[lutsim][report]")
   CHECK(report.find("y                CONST ZERO") != std::string::npos);
 }
 
+TEST_CASE("lutsim evaluates large truth tables with multiple threads", "[lutsim][threads]")
+{
+  std::ostringstream bench;
+  for (unsigned i = 0; i < 18; ++i)
+    bench << "INPUT(p" << i << ")\n";
+  bench << "OUTPUT(y)\n";
+  bench << "n1 = LUT 0x6 (p0, p1)\n";
+  for (unsigned i = 2; i < 18; ++i)
+    bench << 'n' << i << " = LUT 0x6 (n" << i - 1 << ", p" << i << ")\n";
+  bench << "y = LUT 0x6 (n17, n17)\n";
+
+  std::istringstream input(bench.str());
+  CircuitGraph graph;
+  LutParser parser;
+  REQUIRE(parser.parse(input, graph));
+
+  simulator sim(graph, 4);
+  REQUIRE(sim.simulate());
+  std::ostringstream report;
+  sim.print_simulation_summary(report);
+  CHECK(report.str().find("Threads : 4") != std::string::npos);
+  CHECK(report.str().find("CONST ZERO") != std::string::npos);
+}
+
 TEST_CASE("dsd decomposes and writes a functionally equivalent BENCH", "[dsd]")
 {
   const std::string filename = "/tmp/stp_dsd_regression.bench";
