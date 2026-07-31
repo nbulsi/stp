@@ -51,11 +51,23 @@ TEST_CASE("lutsim simulates the CRLF cma152a benchmark", "[lutsim][regression]")
   CHECK(report.find("0x") != std::string::npos);
 }
 
+TEST_CASE("lutsim does not expand primary inputs outside the output cone", "[lutsim][scaling]")
+{
+  std::istringstream input("INPUT(unused0)\nINPUT(a)\nINPUT(unused1)\nINPUT(b)\nOUTPUT(y)\n"
+                           "y = LUT 0x8 (a, b)\n");
+
+  const std::string report = simulate_lut_bench(input);
+  CHECK(report.find("Inputs  : 4") != std::string::npos);
+  CHECK(report.find("Cone support : 2 (unused inputs are not expanded)") != std::string::npos);
+  CHECK(report.find("Input order (LSB -> MSB) : a, b") != std::string::npos);
+  CHECK(report.find("0x8") != std::string::npos);
+}
+
 TEST_CASE("lutsim simulates bundled LF benchmarks", "[lutsim][regression]")
 {
   const std::vector<std::pair<std::string, std::string>> cases = {
       {"c17_lut.bench", "0xF313F333"},
-      {"t1.bench", "0x0"},
+      {"t1.bench", "CONST ZERO"},
       {"t2.bench", "0xF8"},
   };
 
@@ -66,6 +78,28 @@ TEST_CASE("lutsim simulates bundled LF benchmarks", "[lutsim][regression]")
     REQUIRE(input.good());
     CHECK(simulate_lut_bench(input).find(truth_table) != std::string::npos);
   }
+}
+
+TEST_CASE("lutsim can suppress truth-table output", "[lutsim][report]")
+{
+  std::istringstream input("INPUT(a)\nINPUT(b)\nOUTPUT(y)\ny = LUT 0x8 (a, b)\n");
+  CircuitGraph graph;
+  LutParser parser;
+  REQUIRE(parser.parse(input, graph));
+
+  simulator sim(graph);
+  REQUIRE(sim.simulate());
+  std::ostringstream report;
+  sim.print_simulation_summary(report, false);
+  CHECK(report.str().find("Truth tables : not printed") != std::string::npos);
+  CHECK(report.str().find("0x8") == std::string::npos);
+}
+
+TEST_CASE("lutsim abbreviates an all-zero output", "[lutsim][report]")
+{
+  std::istringstream input("INPUT(a)\nOUTPUT(y)\ny = LUT 0x0 (a)\n");
+  const std::string report = simulate_lut_bench(input);
+  CHECK(report.find("y                CONST ZERO") != std::string::npos);
 }
 
 TEST_CASE("dsd decomposes and writes a functionally equivalent BENCH", "[dsd]")

@@ -1,310 +1,234 @@
 // Copyright (c) 2023-2026 The STP Authors
 // SPDX-License-Identifier: MIT
 
-#include <bitset>
-#include <climits>
+#pragma once
+
+#include <algorithm>
+#include <cstdint>
 #include <deque>
 #include <iomanip>
 #include <iostream>
-#include <map>
-#include <random>
-#include <stack>
-#include <stp/core/circuit_graph.hpp>
-#include <stp/io/expr_parser.hpp>
-#include <stp/utils/stp_utils.hpp>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
-#pragma once
+#include <stp/core/circuit_graph.hpp>
+#include <stp/io/expr_parser.hpp> // compatibility: exposes the legacy CUDA mode flag
 
-using need_sim_nodes = std::deque<gate_idx>;
-using line_sim_info = std::vector<u_int16_t>;
-
+// Truth tables are stored in bit-sliced form.  One machine word evaluates 64
+// input assignments at once, instead of storing one uint16_t per assignment.
 class simulator
 {
 public:
-  simulator(CircuitGraph &graph) : graph(graph)
+  explicit simulator(CircuitGraph &graph) : graph(graph)
   {
-    pattern_num = pow(2, graph.get_inputs().size()); // pattern num
-    max_branch = 8;
-    sim_info.resize(graph.get_lines().size());
-    lines_flag.resize(graph.get_lines().size(), false);
+    const auto line_count = graph.get_lines().size();
+    sim_info.resize(line_count);
+    live_gate.assign(graph.get_gates().size(), false);
+    find_output_cone_and_support();
 
-    for (const line_idx &line_id : graph.get_inputs())
-    {
-      sim_info[line_id].resize(pattern_num);
-      lines_flag[line_id] = true;
-    }
+    if (active_inputs.size() >= std::numeric_limits<size_t>::digits)
+      throw std::length_error("truth table support is too large for this platform");
 
-    for (int i = 0; i < pattern_num; i++)
-    {
-      std::bitset<32> pattern(pattern_num - 1 - i);
-      for (size_t j = 0; j < graph.get_inputs().size(); j++)
-      {
-        sim_info[graph.get_inputs()[j]][i] = pattern[j];
-      }
-    }
+    pattern_num = size_t{1} << active_inputs.size();
+    word_num = (pattern_num + word_bits - 1) / word_bits;
   }
 
   bool simulate()
   {
     graph.match_logic_depth();
+    initialize_inputs();
 
-    need_sim_nodes nodes = get_need_nodes();
+    std::vector<size_t> remaining_uses(graph.get_lines().size(), 0);
+    for (size_t gate_id = 0; gate_id < graph.get_gates().size(); ++gate_id)
+      if (live_gate[gate_id])
+        for (const auto input : graph.get_gates()[gate_id].get_inputs())
+          ++remaining_uses[input];
 
-    for (const auto &node : nodes)
+    for (const auto &level : graph.get_m_node_level())
     {
-      single_node_sim(node);
+      for (const auto gate_id : level)
+      {
+        if (!live_gate[gate_id])
+          continue;
+        simulate_gate(gate_id);
+        for (const auto input : graph.get_gates()[gate_id].get_inputs())
+        {
+          if (--remaining_uses[input] == 0 && !graph.get_lines()[input].is_output)
+            std::vector<uint64_t>().swap(sim_info[input]);
+        }
+      }
     }
-
-    // print_simulation_result();
     return true;
   }
 
-  void print_simulation_result()
+  void print_simulation_result(std::ostream &os = std::cout) const
   {
-    for (const auto &input_id : graph.get_inputs())
+    for (const auto input : active_inputs)
+      os << graph.get_lines()[input].name << ' ';
+    os << ": ";
+    for (const auto output : graph.get_outputs())
+      os << graph.get_lines()[output].name << ' ';
+    os << '\n';
+
+    for (size_t pattern = 0; pattern < pattern_num; ++pattern)
     {
-      std::cout << graph.get_lines()[input_id].name << " ";
-    }
-    std::cout << ": ";
-    for (const auto &output_id : graph.get_outputs())
-    {
-      std::cout << graph.get_lines()[output_id].name << " ";
-    }
-    std::cout << std::endl;
-    for (int i = 0; i < pattern_num; i++)
-    {
-      for (const auto &input_id : graph.get_inputs())
-      {
-        std::cout << sim_info[input_id][i] << "  ";
-      }
-      std::cout << ":  ";
-      for (const auto &output_id : graph.get_outputs())
-      {
-        std::cout << sim_info[output_id][i] << " ";
-      }
-      std::cout << std::endl;
+      const size_t assignment = pattern_num - 1 - pattern;
+      for (size_t input = 0; input < active_inputs.size(); ++input)
+        os << ((assignment >> input) & 1u) << "  ";
+      os << ":  ";
+      for (const auto output : graph.get_outputs())
+        os << value_at(sim_info[output], pattern) << ' ';
+      os << '\n';
     }
   }
 
-  void print_simulation_summary(std::ostream &os = std::cout) const
+  void print_simulation_summary(std::ostream &os = std::cout,
+                                const bool print_truth_tables = true) const
   {
     os << "  Inputs  : " << graph.get_inputs().size() << '\n';
+    os << "  Cone support : " << active_inputs.size();
+    if (active_inputs.size() != graph.get_inputs().size())
+      os << " (unused inputs are not expanded)";
+    os << '\n';
     os << "  Input order (LSB -> MSB) : ";
-    for (size_t index = 0; index < graph.get_inputs().size(); ++index)
+    for (size_t index = 0; index < active_inputs.size(); ++index)
     {
       if (index != 0)
         os << ", ";
-      os << graph.get_lines()[graph.get_inputs()[index]].name;
+      os << graph.get_lines()[active_inputs[index]].name;
     }
     os << '\n';
     os << "  Outputs : " << graph.get_outputs().size() << '\n';
-    os << "  Truth tables\n";
-
-    for (const auto &output_id : graph.get_outputs())
+    if (!print_truth_tables)
     {
-      os << "    " << std::left << std::setw(16) << graph.get_lines()[output_id].name << " "
-         << output_truth_table_hex(output_id) << '\n';
+      os << "  Truth tables : not printed\n";
+      return;
     }
+
+    os << "  Truth tables (over cone support)\n";
+
+    for (const auto output : graph.get_outputs())
+      os << "    " << std::left << std::setw(16) << graph.get_lines()[output].name << ' '
+         << (is_const_zero(output) ? "CONST ZERO" : output_truth_table_hex(output)) << '\n';
   }
 
 private:
-  std::string output_truth_table_hex(const line_idx output_id) const
+  static constexpr size_t word_bits = 64;
+  static unsigned value_at(const std::vector<uint64_t> &table, const size_t pattern)
   {
-    std::string bits;
-    bits.reserve(pattern_num);
-    for (const auto value : sim_info[output_id])
+    return static_cast<unsigned>((table[pattern / word_bits] >> (pattern % word_bits)) & 1u);
+  }
+
+  bool is_const_zero(const line_idx output) const
+  {
+    return std::all_of(sim_info[output].begin(), sim_info[output].end(),
+                       [](const uint64_t word) { return word == 0; });
+  }
+
+  void find_output_cone_and_support()
+  {
+    std::vector<bool> live_line(graph.get_lines().size(), false);
+    std::deque<line_idx> pending(graph.get_outputs().begin(), graph.get_outputs().end());
+    while (!pending.empty())
     {
-      bits.push_back(value == 0 ? '0' : '1');
+      const auto line = pending.front();
+      pending.pop_front();
+      if (live_line[line])
+        continue;
+      live_line[line] = true;
+      const auto source = graph.get_lines()[line].source;
+      if (source == NULL_INDEX)
+        continue;
+      live_gate[source] = true;
+      for (const auto input : graph.get_gates()[source].get_inputs())
+        pending.push_back(input);
     }
 
-    const auto padding = (4 - bits.size() % 4) % 4;
-    bits.insert(0, padding, '0');
-
-    std::stringstream stream;
-    stream << "0x";
-    stp::print_hex(bits, stream);
-    return stream.str();
-  }
-
-  bool is_simulated(const line_idx id)
-  {
-    return sim_info[id].size() == pattern_num;
-  }
-
-  need_sim_nodes get_need_nodes()
-  {
-    need_sim_nodes nodes;
-    for (const auto &nodes_id : graph.get_m_node_level())
-    {
-      for (const auto &node_id : nodes_id)
+    // Preserve the graph's public input order, which defines LSB -> MSB.
+    for (const auto input : graph.get_inputs())
+      if (live_line[input])
       {
-        const auto &node = graph.get_gates()[node_id];             // get node
-        const auto &output = graph.get_lines()[node.get_output()]; // get line
+        active_inputs.push_back(input);
+      }
+  }
 
-        if (output.is_output || output.destination_gates.size() > fanout_limit)
+  void initialize_inputs()
+  {
+    for (size_t input_index = 0; input_index < active_inputs.size(); ++input_index)
+    {
+      auto &table = sim_info[active_inputs[input_index]];
+      table.assign(word_num, 0);
+      for (size_t pattern = 0; pattern < pattern_num; ++pattern)
+      {
+        const size_t assignment = pattern_num - 1 - pattern;
+        if ((assignment >> input_index) & 1u)
+          table[pattern / word_bits] |= uint64_t{1} << (pattern % word_bits);
+      }
+    }
+  }
+
+  void simulate_gate(const gate_idx gate_id)
+  {
+    const auto &gate = graph.get_gates()[gate_id];
+    const auto &inputs = gate.get_inputs();
+    const auto &type = gate.get_type();
+    auto &output = sim_info[gate.get_output()];
+    output.assign(word_num, 0);
+
+    const size_t combinations = size_t{1} << inputs.size();
+    for (size_t truth_index = 0; truth_index < combinations; ++truth_index)
+    {
+      // stp_vec stores the complement of each Boolean truth-table entry.
+      if (type(combinations - truth_index) != 0)
+        continue;
+      for (size_t word_index = 0; word_index < word_num; ++word_index)
+      {
+        uint64_t minterm = ~uint64_t{0};
+        for (size_t input_index = 0; input_index < inputs.size(); ++input_index)
         {
-          nodes.clear();
-          lines_flag[node.get_output()] = true;
-          nodes.push_back(node_id);
-          cut_tree(nodes);
+          const bool one = (truth_index >> (inputs.size() - 1 - input_index)) & 1u;
+          const uint64_t value = sim_info[inputs[input_index]][word_index];
+          minterm &= one ? value : ~value;
         }
-
-        nodes.push_back(node_id);
+        output[word_index] |= minterm;
       }
     }
-    nodes.clear();
 
-    for (unsigned level = 0; level <= graph.get_mld(); level++)
-    {
-      for (const auto &node_id : graph.get_m_node_level()[level])
-      {
-        line_idx output = graph.get_gates()[node_id].get_output();
-        // lines_flag[output] = true;
-        if (lines_flag[output] == true)
-        {
-          nodes.push_back(node_id);
-        }
-      }
-    }
-    return nodes;
+    const size_t valid_bits = pattern_num % word_bits;
+    if (valid_bits != 0)
+      output.back() &= (uint64_t{1} << valid_bits) - 1;
   }
 
-  // BFS
-  void cut_tree(need_sim_nodes &nodes)
+  std::string output_truth_table_hex(const line_idx output) const
   {
-    need_sim_nodes temp_nodes;
-    const auto &graph_lines = graph.get_lines(); // get all lines
-    const auto &graph_gates = graph.get_gates(); // get all nodes
-
-    while (!nodes.empty())
+    static constexpr char digits[] = "0123456789ABCDEF";
+    const size_t padding = (4 - pattern_num % 4) % 4;
+    std::string result = "0x";
+    result.reserve(2 + (pattern_num + padding) / 4);
+    size_t bit = 0;
+    if (padding != 0)
     {
-      temp_nodes.clear();
-      temp_nodes.push_back(nodes.front());
-      nodes.pop_front();
-      int count = 0;
-      while (1)
-      {
-        for (const auto &input : graph_gates[temp_nodes.front()].get_inputs())
-        {
-          count++;
-          if (lines_flag[input] == false)
-          {
-            temp_nodes.push_back(graph_lines[input].source);
-          }
-        }
-        temp_nodes.pop_front();
-        count--;
-        if (count > max_branch || temp_nodes.empty())
-        {
-          break;
-        }
-      }
-
-      for (const auto &node_id : temp_nodes)
-      {
-        lines_flag[graph_gates[node_id].get_output()] = true;
-        nodes.push_back(node_id);
-      }
+      unsigned nibble = 0;
+      for (size_t shift = padding; shift < 4; ++shift)
+        nibble = (nibble << 1) | value_at(sim_info[output], bit++);
+      result.push_back(digits[nibble]);
     }
+    while (bit < pattern_num)
+    {
+      unsigned nibble = 0;
+      for (size_t shift = 0; shift < 4; ++shift)
+        nibble = (nibble << 1) | value_at(sim_info[output], bit++);
+      result.push_back(digits[nibble]);
+    }
+    return result;
   }
 
-  void single_node_sim(const gate_idx node_id)
-  {
-    const auto &node = graph.get_gates()[node_id];
-    const gate_idx &output = node.get_output();
-    std::map<line_idx, int> map;
-    // m_chain matrix_chain;
-    std::vector<stp::expr_node> lut_chain;
-    get_node_matrix(node_id, lut_chain, map);
-    std::vector<int64_t> old_pi_index(map.size());
-
-    for (int i = 0; i < map.size(); i++)
-    {
-      old_pi_index[i] = i;
-    }
-
-    stp::expr_chain_parser lut(lut_chain, old_pi_index);
-    std::vector<stp_data> root_stp_vec = lut.out_vec;
-    std::vector<line_idx> variable(map.size());
-    int inputs_number = variable.size();
-    for (const auto &temp : map)
-      variable[temp.second - 1] = temp.first;
-    sim_info[output].resize(pattern_num);
-    int idx;
-    int bits = 1 << inputs_number;
-
-    for (int i = 0; i < pattern_num; i++)
-    {
-      idx = 0;
-      for (int j = 0; j < inputs_number; j++)
-      {
-        idx = (idx << 1) + sim_info[variable[j]][i];
-      }
-      idx = bits - idx;
-      sim_info[output][i] = 1 - root_stp_vec[idx];
-    }
-    lines_flag[output] = true;
-  }
-
-  void get_node_matrix(const gate_idx node_id, std::vector<stp::expr_node> &lut_chain,
-                       std::map<line_idx, int> &map)
-  {
-    const auto &node = graph.get_gates()[node_id];
-
-    lut_chain.emplace_back(stp::NodeType_Gate, stp::GateType_Lut, 0, 0, node.get_type().vec);
-
-    int temp;
-    for (const auto &line_id : node.get_inputs())
-    {
-      if (lines_flag[line_id])
-      {
-        if (map.find(line_id) == map.end())
-        {
-          temp = map.size() + 1;
-          map.emplace(line_id, map.size() + 1);
-        }
-        else
-          temp = map.at(line_id);
-        stp::expr_node new_var(stp::NodeType_Variable, temp - 1);
-        lut_chain.emplace_back(new_var);
-      }
-      else
-      {
-        get_node_matrix(graph.get_lines()[line_id].source, lut_chain, map);
-      }
-    }
-  }
-
-  bool check_sim_info()
-  {
-    for (int i = 0; i < sim_info.size(); i++)
-    {
-      if (sim_info[i].size() != pattern_num)
-      {
-        std::cout << "!" << std::endl;
-        return false;
-      }
-      for (int j = 0; j < sim_info[i].size(); j++)
-      {
-        if (sim_info[i][j] != 0 && sim_info[i][j] != 1)
-        {
-          std::cout << "!" << std::endl;
-          return false;
-        }
-      }
-    }
-    std::cout << "^ ^" << std::endl;
-    return true;
-  }
-
-private:
-  std::vector<line_sim_info> sim_info;
-  std::vector<int> time_interval;
-  std::vector<bool> lines_flag;
+  std::vector<std::vector<uint64_t>> sim_info;
+  std::vector<line_idx> active_inputs;
+  std::vector<bool> live_gate;
   CircuitGraph &graph;
-  int pattern_num;
-  int max_branch;
-  int fanout_limit = 1;
+  size_t pattern_num = 0;
+  size_t word_num = 0;
 };

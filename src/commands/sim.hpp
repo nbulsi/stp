@@ -38,7 +38,8 @@ bool configure_cuda(const bool use_cuda)
 #endif
 }
 
-void simulate_and_report(CircuitGraph &graph, const std::string &design, const bool verbose)
+void simulate_and_report(CircuitGraph &graph, const std::string &design, const bool verbose,
+                         const bool print_truth_tables)
 {
   simulator sim(graph);
   const auto start = std::chrono::high_resolution_clock::now();
@@ -50,7 +51,7 @@ void simulate_and_report(CircuitGraph &graph, const std::string &design, const b
   std::cout << "Report : STP logic simulation\n";
   std::cout << "Design : " << design << '\n';
   std::cout << "----------------------------------------\n";
-  sim.print_simulation_summary();
+  sim.print_simulation_summary(std::cout, print_truth_tables);
   std::cout << "----------------------------------------\n";
   std::cout << "  Runtime : " << std::fixed << std::setprecision(3)
             << static_cast<double>(time) / 1000.0 << " ms\n";
@@ -96,6 +97,7 @@ public:
       : command(env, "Simulate a LUT BENCH circuit and print truth tables")
   {
     add_flag("--verbose", "print the detailed input/output truth table");
+    add_flag("--no-truth-table", "do not print output truth tables");
     add_flag("--cuda, -c", "use CUDA acceleration");
     add_option("filename", filename, "input bench file", true);
   }
@@ -118,7 +120,7 @@ protected:
       return;
     }
     if (configure_cuda(is_set("cuda") || is_set("-c")))
-      simulate_and_report(graph, filename, is_set("verbose"));
+      simulate_and_report(graph, filename, is_set("verbose"), !is_set("no-truth-table"));
   }
 
 private:
@@ -132,6 +134,7 @@ public:
       : command(env, "Simulate a Boolean expression and print its truth table")
   {
     add_flag("--verbose", "print the detailed input/output truth table");
+    add_flag("--no-truth-table", "do not print output truth tables");
     add_flag("--cuda, -c", "use CUDA acceleration");
     add_option("--inputs", input_order, "comma-separated input order; the first name is the LSB");
     add_option("expression", expression_tokens, "Lisp-style Boolean expression", true);
@@ -152,7 +155,7 @@ protected:
       return;
     }
     if (configure_cuda(is_set("cuda") || is_set("-c")))
-      simulate_and_report(graph, expression, is_set("verbose"));
+      simulate_and_report(graph, expression, is_set("verbose"), !is_set("no-truth-table"));
   }
 
 private:
