@@ -27,6 +27,8 @@ else()
     project(stp LANGUAGES CXX)
 endif()
 
+find_package(Threads REQUIRED)
+
 # Add public include directory
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
@@ -40,6 +42,5 @@ include(CTest)
 if(BUILD_TESTING)
     add_subdirectory(test)
 endif()
-
 
 

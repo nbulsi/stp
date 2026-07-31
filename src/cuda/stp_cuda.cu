@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <stdexcept>
 
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -15,21 +16,33 @@ uint64_t Total_Thread = 0; // total supported threads
 
 extern "C"
     // get total thread number
-    void Get_Total_Thread_Num(void)
+    bool Get_Total_Thread_Num(void)
 {
-  int deviceCount;
+  int deviceCount = 0;
   // get the number of CUDA devices
   cudaError_t error = cudaGetDeviceCount(&deviceCount);
   if (error != cudaSuccess)
   {
     std::cerr << "cudaGetDeviceCount failed: " << cudaGetErrorString(error) << std::endl;
-    return;
+    return false;
+  }
+  if (deviceCount == 0)
+  {
+    std::cerr << "cudaGetDeviceCount found no CUDA-capable devices" << std::endl;
+    return false;
   }
 
+  Total_Thread = 0;
   for (int i = 0; i < deviceCount; ++i)
   {
     cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, i);
+    error = cudaGetDeviceProperties(&deviceProp, i);
+    if (error != cudaSuccess)
+    {
+      std::cerr << "cudaGetDeviceProperties failed for device " << i << ": "
+                << cudaGetErrorString(error) << std::endl;
+      return false;
+    }
 
     // std::cout << "Device " << i << ": " << deviceProp.name << std::endl;
     // std::cout << "Max threads per block: " << deviceProp.maxThreadsPerBlock << std::endl;
@@ -41,6 +54,7 @@ extern "C"
     // deviceProp.multiProcessorCount << std::endl; std::cout << std::endl;
     Total_Thread = deviceProp.maxThreadsPerMultiProcessor * deviceProp.multiProcessorCount;
   }
+  return Total_Thread != 0;
 }
 
 extern "C" CUDA_DATA Memcpy_To_Device(std::vector<stp_data> &A)
@@ -451,7 +465,7 @@ extern "C"
   }
   else
   {
-    // error
-    std::cout << "Error" << std::endl;
+    throw std::invalid_argument(
+        "semi-tensor product requires one inner dimension to divide the other");
   }
 }

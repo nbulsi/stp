@@ -29,8 +29,12 @@ bool configure_cuda(const bool use_cuda)
   }
 
 #ifdef ENABLE_CUDA
-  _using_CUDA = true;
-  Get_Total_Thread_Num();
+  _using_CUDA = Get_Total_Thread_Num();
+  if (!_using_CUDA)
+  {
+    std::cerr << "CUDA initialization failed; run without -c to use the CPU simulator" << std::endl;
+    return false;
+  }
   return true;
 #else
   std::cout << "can't find cuda" << std::endl;

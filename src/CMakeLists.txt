@@ -18,4 +18,4 @@ if(STP_ENABLE_CUDA AND CMAKE_CUDA_COMPILER)
     target_compile_definitions(stp PUBLIC ENABLE_CUDA)
 endif()
 
-target_link_libraries(stp PRIVATE fmt pthread stp_lib)
+target_link_libraries(stp PRIVATE fmt Threads::Threads stp_lib)

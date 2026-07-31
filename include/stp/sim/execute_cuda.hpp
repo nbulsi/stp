@@ -22,7 +22,7 @@ extern "C" CUDA_DATA my_cuda_In_KR_Matrix(int32_t dim, CUDA_DATA &A);
 
 extern "C" CUDA_DATA my_cuda_Matrix_KR_In(int32_t dim, CUDA_DATA &A);
 
-extern "C" void Get_Total_Thread_Num(void);
+extern "C" bool Get_Total_Thread_Num(void);
 
 extern "C" CUDA_DATA my_cuda_semi_tensor_product(CUDA_DATA &A, CUDA_DATA &B);
 
