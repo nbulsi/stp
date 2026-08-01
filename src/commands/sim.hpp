@@ -20,34 +20,55 @@ namespace alice
 {
 namespace
 {
-bool configure_cuda(const bool use_cuda)
+bool configure_backend(const std::string &name, const bool cuda_alias, SimulationBackend &backend)
 {
-  if (!use_cuda)
+  const std::string selected = cuda_alias ? "stp-gpu" : name;
+  if (selected == "stp-cpu")
+    backend = SimulationBackend::StpCpu;
+  else if (selected == "stp-gpu")
+    backend = SimulationBackend::StpGpu;
+  else if (selected == "bitslice")
+    backend = SimulationBackend::BitSlice;
+  else if (selected == "hybrid-cpu")
+    backend = SimulationBackend::HybridCpu;
+  else if (selected == "hybrid-gpu")
+    backend = SimulationBackend::HybridGpu;
+  else
   {
-    _using_CUDA = false;
-    return true;
+    std::cerr << "unknown simulation backend '" << selected
+              << "'; expected stp-cpu, stp-gpu, bitslice, hybrid-cpu, or hybrid-gpu\n";
+    return false;
   }
 
+  const bool use_gpu =
+      backend == SimulationBackend::StpGpu || backend == SimulationBackend::HybridGpu;
+  if (!use_gpu)
+    return true;
+
 #ifdef ENABLE_CUDA
-  _using_CUDA = Get_Total_Thread_Num();
-  if (!_using_CUDA)
+  if (!Get_Total_Thread_Num())
   {
-    std::cerr << "CUDA initialization failed; run without -c to use the CPU simulator" << std::endl;
+    std::cerr << "CUDA initialization failed; select a CPU backend to continue\n";
     return false;
   }
   return true;
 #else
-  std::cout << "can't find cuda" << std::endl;
+  std::cerr << "GPU backend requested, but CUDA support is not enabled in this build\n";
   return false;
 #endif
 }
 
 void simulate_and_report(CircuitGraph &graph, const std::string &design, const bool verbose,
-                         const bool print_truth_tables, const unsigned threads)
+                         const bool print_truth_tables, const SimulationBackend backend,
+                         const unsigned threads)
 {
-  simulator sim(graph, threads);
+  simulator sim(graph, backend, threads);
   const auto start = std::chrono::high_resolution_clock::now();
-  sim.simulate();
+  if (!sim.simulate())
+  {
+    std::cerr << "simulation failed\n";
+    return;
+  }
   const auto end = std::chrono::high_resolution_clock::now();
   const auto time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
 
@@ -102,7 +123,9 @@ public:
   {
     add_flag("--verbose", "print the detailed input/output truth table");
     add_flag("--no-truth-table", "do not print output truth tables");
-    add_flag("--cuda, -c", "use CUDA acceleration");
+    add_flag("--cuda, -c", "alias for --backend stp-gpu");
+    add_option("--backend", backend_name,
+               "stp-cpu (default), stp-gpu, bitslice, hybrid-cpu, or hybrid-gpu");
     add_option("--threads", threads, "simulation threads; 0 means automatic", true);
     add_option("filename", filename, "input bench file", true);
   }
@@ -121,15 +144,21 @@ protected:
     LutParser parser;
     if (!parser.parse(input, graph))
     {
-      std::cout << "can't parse file " << filename << std::endl;
+      std::cout << "can't parse file " << filename;
+      if (!parser.error().empty())
+        std::cout << ": " << parser.error();
+      std::cout << std::endl;
       return;
     }
-    if (configure_cuda(is_set("cuda") || is_set("-c")))
-      simulate_and_report(graph, filename, is_set("verbose"), !is_set("no-truth-table"), threads);
+    SimulationBackend backend;
+    if (configure_backend(backend_name, is_set("cuda") || is_set("-c"), backend))
+      simulate_and_report(graph, filename, is_set("verbose"), !is_set("no-truth-table"), backend,
+                          threads);
   }
 
 private:
   std::string filename;
+  std::string backend_name = "stp-cpu";
   unsigned threads = 0;
 };
 
@@ -141,7 +170,9 @@ public:
   {
     add_flag("--verbose", "print the detailed input/output truth table");
     add_flag("--no-truth-table", "do not print output truth tables");
-    add_flag("--cuda, -c", "use CUDA acceleration");
+    add_flag("--cuda, -c", "alias for --backend stp-gpu");
+    add_option("--backend", backend_name,
+               "stp-cpu (default), stp-gpu, bitslice, hybrid-cpu, or hybrid-gpu");
     add_option("--threads", threads, "simulation threads; 0 means automatic", true);
     add_option("--inputs", input_order, "comma-separated input order; the first name is the LSB");
     add_option("expression", expression_tokens, "Lisp-style Boolean expression", true);
@@ -161,13 +192,16 @@ protected:
       std::cout << "can't parse expression: " << error << std::endl;
       return;
     }
-    if (configure_cuda(is_set("cuda") || is_set("-c")))
-      simulate_and_report(graph, expression, is_set("verbose"), !is_set("no-truth-table"), threads);
+    SimulationBackend backend;
+    if (configure_backend(backend_name, is_set("cuda") || is_set("-c"), backend))
+      simulate_and_report(graph, expression, is_set("verbose"), !is_set("no-truth-table"), backend,
+                          threads);
   }
 
 private:
   std::vector<std::string> expression_tokens;
   std::string input_order;
+  std::string backend_name = "stp-cpu";
   unsigned threads = 0;
 };
 

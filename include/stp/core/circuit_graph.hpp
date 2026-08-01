@@ -11,6 +11,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <stp/utils/stp_vector.hpp>
 #include <string>
 #include <unordered_map>
@@ -272,17 +273,25 @@ public:
 
   void match_logic_depth()
   {
+    m_node_level.clear();
+    max_logic_depth = -1;
+    for (auto &gate : m_gates)
+      gate.level() = NO_LEVEL;
+
+    std::vector<unsigned char> visit_state(m_gates.size(), 0);
     for (int i = 0, num = m_outputs.size(); i < num; i++)
     {
-      int level = compute_node_depth(m_lines[m_outputs[i]].source);
+      const gate_idx source = m_lines[m_outputs[i]].source;
+      if (source == NULL_INDEX)
+        continue;
+      int level = compute_node_depth(source, visit_state);
       if (level > max_logic_depth)
         max_logic_depth = level;
     }
     m_node_level.resize(max_logic_depth + 1);
     for (int i = 0; i < m_gates.size(); i++)
-    {
-      m_node_level[m_gates[i].get_level()].push_back(i);
-    }
+      if (m_gates[i].get_level() != NO_LEVEL)
+        m_node_level[m_gates[i].get_level()].push_back(i);
   }
   void print_graph()
   {
@@ -333,19 +342,30 @@ private:
     return line.id_line;
   }
 
-  int compute_node_depth(const gate_idx g_id)
+  int compute_node_depth(const gate_idx g_id, std::vector<unsigned char> &visit_state)
   {
+    if (g_id < 0 || static_cast<size_t>(g_id) >= m_gates.size())
+      throw std::runtime_error("circuit contains a gate with an invalid source");
+
     Gate &gate = m_gates[g_id];
 
     if (gate.get_level() != NO_LEVEL)
       return gate.get_level();
+    if (visit_state[g_id] == 1)
+      throw std::runtime_error("circuit graph contains a combinational cycle");
+    visit_state[g_id] = 1;
+
     int max_depth = NO_LEVEL;
     int level = -1;
     for (const auto &child : gate.get_inputs())
     {
+      if (child < 0 || static_cast<size_t>(child) >= m_lines.size())
+        throw std::runtime_error("circuit contains a gate with an invalid input line");
       if (m_lines[child].is_input)
         continue;
-      level = compute_node_depth(m_lines[child].source);
+      if (m_lines[child].source == NULL_INDEX)
+        throw std::runtime_error("circuit contains an uninitialized gate input");
+      level = compute_node_depth(m_lines[child].source, visit_state);
       if (level > max_depth)
       {
         max_depth = level;
@@ -354,6 +374,7 @@ private:
     if (max_depth == NO_LEVEL)
       max_depth = -1;
     m_gates[g_id].level() = max_depth + 1;
+    visit_state[g_id] = 2;
     return m_gates[g_id].level();
   }
 

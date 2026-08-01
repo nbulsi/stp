@@ -26,7 +26,6 @@ SimulationResult simulate_expression(const std::string &expression,
   if (!parser.parse(expression, graph, result.error, input_order))
     return result;
 
-  _using_CUDA = false;
   simulator sim(graph);
   sim.simulate();
   std::ostringstream report;

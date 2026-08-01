@@ -5,14 +5,13 @@
 
 #include <cmath>
 #include <iostream>
+#include <stdexcept>
 #include <stp/sim/execute.hpp>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #define STP_K 2
-
-inline bool _using_CUDA = false;
 
 namespace stp
 {
@@ -124,20 +123,18 @@ class expr_chain_parser
 public:
   // initialize
   expr_chain_parser(const std::vector<expr_node> &expr_chain,
-                    const std::vector<int64_t> &old_pi_index)
-      : expr_chain(expr_chain), input_names(old_pi_index)
+                    const std::vector<int64_t> &old_pi_index, const bool use_cuda = false)
+      : expr_chain(expr_chain), input_names(old_pi_index), use_cuda_(use_cuda)
   {
     // print_expr_chain(expr_chain);
     normalize_expr_chain();
     // print_expr_chain(expr_chain);
-    if (_using_CUDA == true)
+    if (use_cuda_)
     {
 #ifdef ENABLE_CUDA
       from_expr_to_matrix_cuda();
-      if ((expr_chain.size() - pi_num) > 5)
-        from_expr_to_matrix_cuda();
-      else
-        from_expr_to_matrix();
+#else
+      throw std::runtime_error("CUDA expression evaluation is unavailable in this build");
 #endif
     }
     else
@@ -649,6 +646,7 @@ private:
   std::vector<stp_data> result_vec;
   int k = STP_K;
   stp_data pi_num = 0;
+  bool use_cuda_ = false;
 };
 
 } // namespace stp
