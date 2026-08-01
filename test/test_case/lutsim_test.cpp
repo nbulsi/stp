@@ -118,13 +118,85 @@ TEST_CASE("lutsim evaluates large truth tables with multiple threads", "[lutsim]
   LutParser parser;
   REQUIRE(parser.parse(input, graph));
 
-  simulator sim(graph, 4);
+  simulator sim(graph, SimulationBackend::BitSlice, 4);
   REQUIRE(sim.simulate());
   std::ostringstream report;
   sim.print_simulation_summary(report);
   CHECK(report.str().find("Threads : 4") != std::string::npos);
   CHECK(report.str().find("CONST ZERO") != std::string::npos);
 }
+
+TEST_CASE("STP cone truth tables are applied in 64-bit slices", "[lutsim][stp][bitslice]")
+{
+  const std::vector<uint64_t> a = {0xFFFF0000FFFF0000ULL, 0xAAAAAAAAAAAAAAAAULL};
+  const std::vector<uint64_t> b = {0xFF00FF00FF00FF00ULL, 0xCCCCCCCCCCCCCCCCULL};
+  const std::vector<const std::vector<uint64_t> *> inputs = {&a, &b};
+  const std::vector<uint8_t> xor_truth = {0, 1, 1, 0};
+
+  std::vector<uint64_t> output;
+  stp::detail::apply_local_truth_table_bit_sliced(xor_truth, inputs, 70, output);
+
+  REQUIRE(output.size() == 2);
+  CHECK(output[0] == (a[0] ^ b[0]));
+  CHECK(output[1] == ((a[1] ^ b[1]) & 0x3FULL));
+}
+
+TEST_CASE("CPU simulation backends agree on a multi-fanout circuit", "[lutsim][backend]")
+{
+  constexpr const char *bench = "INPUT(a)\nINPUT(b)\nINPUT(c)\nOUTPUT(y)\n"
+                                "shared = LUT 0x6 (a, b)\n"
+                                "left = LUT 0x8 (shared, c)\n"
+                                "right = LUT 0xE (shared, c)\n"
+                                "y = LUT 0x6 (left, right)\n";
+
+  const auto run = [&](const SimulationBackend backend)
+  {
+    std::istringstream input(bench);
+    CircuitGraph graph;
+    LutParser parser;
+    REQUIRE(parser.parse(input, graph));
+    simulator sim(graph, backend);
+    REQUIRE(sim.simulate());
+    std::ostringstream result;
+    sim.print_simulation_result(result);
+    return result.str();
+  };
+
+  const std::string stp_result = run(SimulationBackend::StpCpu);
+  CHECK(run(SimulationBackend::BitSlice) == stp_result);
+  CHECK(run(SimulationBackend::HybridCpu) == stp_result);
+}
+
+#ifdef ENABLE_CUDA
+TEST_CASE("GPU simulation backends agree with STP CPU", "[lutsim][cuda][backend]")
+{
+  Get_Total_Thread_Num();
+
+  constexpr const char *bench = "INPUT(a)\nINPUT(b)\nINPUT(c)\nOUTPUT(y)\n"
+                                "shared = LUT 0x6 (a, b)\n"
+                                "left = LUT 0x8 (shared, c)\n"
+                                "right = LUT 0xE (shared, c)\n"
+                                "y = LUT 0x6 (left, right)\n";
+
+  const auto run = [&](const SimulationBackend backend)
+  {
+    std::istringstream input(bench);
+    CircuitGraph graph;
+    LutParser parser;
+    REQUIRE(parser.parse(input, graph));
+    simulator sim(graph, backend);
+    REQUIRE(sim.simulate());
+    std::ostringstream result;
+    sim.print_simulation_result(result);
+    return result.str();
+  };
+
+  const std::string cpu_result = run(SimulationBackend::StpCpu);
+  CHECK(run(SimulationBackend::StpGpu) == cpu_result);
+  CHECK(run(SimulationBackend::HybridGpu) == cpu_result);
+  _using_CUDA = false;
+}
+#endif
 
 TEST_CASE("dsd decomposes and writes a functionally equivalent BENCH", "[dsd]")
 {

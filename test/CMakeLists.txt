@@ -3,4 +3,9 @@ target_include_directories(exprsim_tests PRIVATE ${PROJECT_SOURCE_DIR}/test/test
 target_link_libraries(exprsim_tests PRIVATE stp_lib Threads::Threads)
 target_compile_definitions(exprsim_tests PRIVATE STP_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
+if(STP_ENABLE_CUDA AND TARGET stp_cuda)
+    target_link_libraries(exprsim_tests PRIVATE stp_cuda)
+    target_compile_definitions(exprsim_tests PRIVATE ENABLE_CUDA)
+endif()
+
 add_test(NAME exprsim_tests COMMAND exprsim_tests)

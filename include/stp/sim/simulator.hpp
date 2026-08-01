@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -102,12 +103,89 @@ private:
   bool stopping = false;
 };
 
+namespace stp::detail
+{
+inline void
+apply_local_truth_table_bit_sliced(const std::vector<uint8_t> &local_truth,
+                                   const std::vector<const std::vector<uint64_t> *> &inputs,
+                                   const size_t pattern_count, std::vector<uint64_t> &output)
+{
+  if (inputs.size() >= std::numeric_limits<size_t>::digits)
+    throw std::invalid_argument("local truth table has too many inputs");
+
+  const size_t assignment_count = size_t{1} << inputs.size();
+  if (local_truth.size() != assignment_count)
+    throw std::invalid_argument("local truth table size does not match its input count");
+
+  constexpr size_t bits_per_word = 64;
+  const size_t word_count = (pattern_count + bits_per_word - 1) / bits_per_word;
+  for (const auto *input : inputs)
+    if (input == nullptr || input->size() < word_count)
+      throw std::invalid_argument("local truth table input is not initialized");
+
+  output.assign(word_count, 0);
+  for (size_t word = 0; word < word_count; ++word)
+  {
+    uint64_t result = 0;
+    for (size_t assignment = 0; assignment < assignment_count; ++assignment)
+    {
+      if (local_truth[assignment] == 0)
+        continue;
+
+      uint64_t minterm = ~uint64_t{0};
+      for (size_t input_index = 0; input_index < inputs.size(); ++input_index)
+      {
+        const bool one = ((assignment >> (inputs.size() - 1 - input_index)) & size_t{1}) != 0;
+        const uint64_t value = (*inputs[input_index])[word];
+        minterm &= one ? value : ~value;
+      }
+      result |= minterm;
+    }
+    output[word] = result;
+  }
+
+  const size_t valid_bits = pattern_count % bits_per_word;
+  if (valid_bits != 0 && !output.empty())
+    output.back() &= (uint64_t{1} << valid_bits) - 1;
+}
+} // namespace stp::detail
+
+enum class SimulationBackend
+{
+  StpCpu,
+  StpGpu,
+  BitSlice,
+  HybridCpu,
+  HybridGpu
+};
+
+inline const char *simulation_backend_name(const SimulationBackend backend)
+{
+  switch (backend)
+  {
+    case SimulationBackend::StpCpu:
+      return "stp-cpu";
+    case SimulationBackend::StpGpu:
+      return "stp-gpu";
+    case SimulationBackend::BitSlice:
+      return "bitslice";
+    case SimulationBackend::HybridCpu:
+      return "hybrid-cpu";
+    case SimulationBackend::HybridGpu:
+      return "hybrid-gpu";
+  }
+  return "unknown";
+}
+
 // Truth tables are stored in bit-sliced form.  One machine word evaluates 64
 // input assignments at once, instead of storing one uint16_t per assignment.
 class simulator
 {
 public:
-  explicit simulator(CircuitGraph &graph, unsigned requested_threads = 0) : graph(graph)
+  explicit simulator(CircuitGraph &graph,
+                     const SimulationBackend backend = SimulationBackend::StpCpu,
+                     const unsigned requested_threads = 0)
+      : graph(graph), backend(backend)
   {
     const auto line_count = graph.get_lines().size();
     sim_info.resize(line_count);
@@ -125,7 +203,8 @@ public:
     if (thread_count == 0)
       thread_count = 1;
     thread_count = static_cast<unsigned>(std::min<size_t>(thread_count, word_num));
-    if (thread_count > 1 && word_num >= parallel_word_threshold)
+    if (backend == SimulationBackend::BitSlice && thread_count > 1 &&
+        word_num >= parallel_word_threshold)
       thread_pool = std::make_unique<SimulationThreadPool>(thread_count);
     else
       thread_count = 1;
@@ -134,7 +213,24 @@ public:
   bool simulate()
   {
     graph.match_logic_depth();
-    initialize_inputs();
+
+    switch (backend)
+    {
+      case SimulationBackend::StpCpu:
+        return simulate_stp(false, false);
+      case SimulationBackend::StpGpu:
+        return simulate_stp(true, false);
+      case SimulationBackend::HybridCpu:
+        initialize_inputs();
+        return simulate_stp(false, true);
+      case SimulationBackend::HybridGpu:
+        initialize_inputs();
+        return simulate_stp(true, true);
+      case SimulationBackend::BitSlice:
+        _using_CUDA = false;
+        initialize_inputs();
+        break;
+    }
 
     std::vector<size_t> remaining_uses(graph.get_lines().size(), 0);
     for (size_t gate_id = 0; gate_id < graph.get_gates().size(); ++gate_id)
@@ -197,6 +293,7 @@ public:
     }
     os << '\n';
     os << "  Outputs : " << graph.get_outputs().size() << '\n';
+    os << "  Backend : " << simulation_backend_name(backend) << '\n';
     os << "  Threads : " << thread_count << '\n';
     if (!print_truth_tables)
     {
@@ -274,6 +371,216 @@ private:
     }
   }
 
+  bool simulate_stp(const bool use_gpu, const bool bit_sliced_apply)
+  {
+    if (use_gpu)
+    {
+#ifndef ENABLE_CUDA
+      std::cerr << "GPU STP backend is unavailable in this build\n";
+      return false;
+#endif
+    }
+    _using_CUDA = use_gpu;
+    stp_lines_flag.assign(graph.get_lines().size(), false);
+
+    if (!bit_sliced_apply)
+    {
+      scalar_sim_info.clear();
+      scalar_sim_info.resize(graph.get_lines().size());
+      for (size_t input_index = 0; input_index < active_inputs.size(); ++input_index)
+      {
+        const auto line = active_inputs[input_index];
+        auto &values = scalar_sim_info[line];
+        values.resize(pattern_num);
+        for (size_t pattern = 0; pattern < pattern_num; ++pattern)
+        {
+          const size_t assignment = pattern_num - 1 - pattern;
+          values[pattern] = static_cast<uint16_t>((assignment >> input_index) & size_t{1});
+        }
+      }
+    }
+
+    for (const auto line : active_inputs)
+      stp_lines_flag[line] = true;
+
+    const auto nodes = get_stp_simulation_nodes();
+    for (const auto node : nodes)
+      simulate_stp_node(node, bit_sliced_apply);
+
+    for (const auto output : graph.get_outputs())
+    {
+      if (bit_sliced_apply && sim_info[output].size() != word_num)
+      {
+        std::cerr << "hybrid STP simulation did not produce output "
+                  << graph.get_lines()[output].name << '\n';
+        return false;
+      }
+      if (!bit_sliced_apply && scalar_sim_info[output].size() != pattern_num)
+      {
+        std::cerr << "STP simulation did not produce output " << graph.get_lines()[output].name
+                  << '\n';
+        return false;
+      }
+    }
+
+    if (!bit_sliced_apply)
+    {
+      for (const auto output : graph.get_outputs())
+      {
+        auto &packed = sim_info[output];
+        packed.assign(word_num, 0);
+        for (size_t pattern = 0; pattern < pattern_num; ++pattern)
+          if (scalar_sim_info[output][pattern] != 0)
+            packed[pattern / word_bits] |= uint64_t{1} << (pattern % word_bits);
+      }
+      scalar_sim_info.clear();
+    }
+
+    stp_lines_flag.clear();
+    return true;
+  }
+
+  std::deque<gate_idx> get_stp_simulation_nodes()
+  {
+    std::deque<gate_idx> nodes;
+    for (const auto &level : graph.get_m_node_level())
+    {
+      for (const auto node_id : level)
+      {
+        const auto &node = graph.get_gates()[node_id];
+        const auto &output = graph.get_lines()[node.get_output()];
+        if (output.is_output || output.destination_gates.size() > stp_fanout_limit)
+        {
+          nodes.clear();
+          stp_lines_flag[node.get_output()] = true;
+          nodes.push_back(node_id);
+          cut_stp_tree(nodes);
+        }
+        nodes.push_back(node_id);
+      }
+    }
+    nodes.clear();
+
+    for (const auto &level : graph.get_m_node_level())
+      for (const auto node_id : level)
+        if (stp_lines_flag[graph.get_gates()[node_id].get_output()])
+          nodes.push_back(node_id);
+    return nodes;
+  }
+
+  void cut_stp_tree(std::deque<gate_idx> &nodes)
+  {
+    std::deque<gate_idx> pending;
+    const auto &lines = graph.get_lines();
+    const auto &gates = graph.get_gates();
+    while (!nodes.empty())
+    {
+      pending.clear();
+      pending.push_back(nodes.front());
+      nodes.pop_front();
+      int branch_count = 0;
+      while (!pending.empty())
+      {
+        for (const auto input : gates[pending.front()].get_inputs())
+        {
+          ++branch_count;
+          if (!stp_lines_flag[input] && lines[input].source != NULL_INDEX)
+            pending.push_back(lines[input].source);
+        }
+        pending.pop_front();
+        --branch_count;
+        if (branch_count > stp_max_branch)
+          break;
+      }
+
+      for (const auto node_id : pending)
+      {
+        stp_lines_flag[gates[node_id].get_output()] = true;
+        nodes.push_back(node_id);
+      }
+    }
+  }
+
+  void simulate_stp_node(const gate_idx node_id, const bool bit_sliced_apply)
+  {
+    const auto &node = graph.get_gates()[node_id];
+    const line_idx output = node.get_output();
+    std::map<line_idx, int> variable_map;
+    std::vector<stp::expr_node> lut_chain;
+    build_stp_chain(node_id, lut_chain, variable_map);
+
+    std::vector<int64_t> old_input_order(variable_map.size());
+    for (size_t index = 0; index < old_input_order.size(); ++index)
+      old_input_order[index] = static_cast<int64_t>(index);
+
+    stp::expr_chain_parser expression(lut_chain, old_input_order);
+    const std::vector<stp_data> &root_stp_vec = expression.out_vec;
+    const size_t local_pattern_count = size_t{1} << variable_map.size();
+    if (root_stp_vec.size() <= local_pattern_count)
+      throw std::runtime_error("STP expression produced an invalid truth table");
+
+    std::vector<line_idx> variables(variable_map.size());
+    for (const auto &entry : variable_map)
+      variables[static_cast<size_t>(entry.second - 1)] = entry.first;
+
+    if (bit_sliced_apply)
+    {
+      std::vector<uint8_t> local_truth(local_pattern_count);
+      for (size_t assignment = 0; assignment < local_pattern_count; ++assignment)
+        local_truth[assignment] =
+            static_cast<uint8_t>(1 - root_stp_vec[local_pattern_count - assignment]);
+
+      std::vector<const std::vector<uint64_t> *> input_tables;
+      input_tables.reserve(variables.size());
+      for (const auto variable : variables)
+        input_tables.push_back(&sim_info[variable]);
+
+      stp::detail::apply_local_truth_table_bit_sliced(local_truth, input_tables, pattern_num,
+                                                      sim_info[output]);
+    }
+    else
+    {
+      auto &output_values = scalar_sim_info[output];
+      output_values.resize(pattern_num);
+      for (size_t pattern = 0; pattern < pattern_num; ++pattern)
+      {
+        size_t index = 0;
+        for (const auto variable : variables)
+          index = (index << 1) + scalar_sim_info[variable][pattern];
+        output_values[pattern] =
+            static_cast<uint16_t>(1 - root_stp_vec[local_pattern_count - index]);
+      }
+    }
+    stp_lines_flag[output] = true;
+  }
+
+  void build_stp_chain(const gate_idx node_id, std::vector<stp::expr_node> &lut_chain,
+                       std::map<line_idx, int> &variable_map)
+  {
+    const auto &node = graph.get_gates()[node_id];
+    lut_chain.emplace_back(stp::NodeType_Gate, stp::GateType_Lut, 0, 0, node.get_type().vec);
+
+    for (const auto line : node.get_inputs())
+    {
+      if (stp_lines_flag[line])
+      {
+        auto position = variable_map.find(line);
+        if (position == variable_map.end())
+        {
+          const int next = static_cast<int>(variable_map.size()) + 1;
+          position = variable_map.emplace(line, next).first;
+        }
+        lut_chain.emplace_back(stp::NodeType_Variable, position->second - 1);
+      }
+      else
+      {
+        const auto source = graph.get_lines()[line].source;
+        if (source == NULL_INDEX)
+          throw std::runtime_error("STP chain reached an uninitialized input");
+        build_stp_chain(source, lut_chain, variable_map);
+      }
+    }
+  }
   void simulate_gate(const gate_idx gate_id)
   {
     const auto &gate = graph.get_gates()[gate_id];
@@ -344,7 +651,12 @@ private:
   std::vector<line_idx> active_inputs;
   std::vector<bool> live_gate;
   std::unique_ptr<SimulationThreadPool> thread_pool;
+  std::vector<std::vector<uint16_t>> scalar_sim_info;
+  std::vector<bool> stp_lines_flag;
+  static constexpr int stp_max_branch = 8;
+  static constexpr size_t stp_fanout_limit = 1;
   CircuitGraph &graph;
+  SimulationBackend backend = SimulationBackend::StpCpu;
   size_t pattern_num = 0;
   size_t word_num = 0;
   unsigned thread_count = 1;

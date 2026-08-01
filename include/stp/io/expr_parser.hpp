@@ -134,10 +134,6 @@ public:
     {
 #ifdef ENABLE_CUDA
       from_expr_to_matrix_cuda();
-      if ((expr_chain.size() - pi_num) > 5)
-        from_expr_to_matrix_cuda();
-      else
-        from_expr_to_matrix();
 #endif
     }
     else
