@@ -20,7 +20,7 @@
 #include <vector>
 
 #include <stp/core/circuit_graph.hpp>
-#include <stp/io/expr_parser.hpp> // compatibility: exposes the legacy CUDA mode flag
+#include <stp/io/expr_parser.hpp>
 
 class SimulationThreadPool
 {
@@ -227,7 +227,6 @@ public:
         initialize_inputs();
         return simulate_stp(true, true);
       case SimulationBackend::BitSlice:
-        _using_CUDA = false;
         initialize_inputs();
         break;
     }
@@ -378,9 +377,14 @@ private:
 #ifndef ENABLE_CUDA
       std::cerr << "GPU STP backend is unavailable in this build\n";
       return false;
+#else
+      if (!Get_Total_Thread_Num())
+      {
+        std::cerr << "GPU STP backend could not initialize a CUDA device\n";
+        return false;
+      }
 #endif
     }
-    _using_CUDA = use_gpu;
     stp_lines_flag.assign(graph.get_lines().size(), false);
 
     if (!bit_sliced_apply)
@@ -405,7 +409,7 @@ private:
 
     const auto nodes = get_stp_simulation_nodes();
     for (const auto node : nodes)
-      simulate_stp_node(node, bit_sliced_apply);
+      simulate_stp_node(node, bit_sliced_apply, use_gpu);
 
     for (const auto output : graph.get_outputs())
     {
@@ -501,7 +505,7 @@ private:
     }
   }
 
-  void simulate_stp_node(const gate_idx node_id, const bool bit_sliced_apply)
+  void simulate_stp_node(const gate_idx node_id, const bool bit_sliced_apply, const bool use_cuda)
   {
     const auto &node = graph.get_gates()[node_id];
     const line_idx output = node.get_output();
@@ -513,7 +517,7 @@ private:
     for (size_t index = 0; index < old_input_order.size(); ++index)
       old_input_order[index] = static_cast<int64_t>(index);
 
-    stp::expr_chain_parser expression(lut_chain, old_input_order);
+    stp::expr_chain_parser expression(lut_chain, old_input_order, use_cuda);
     const std::vector<stp_data> &root_stp_vec = expression.out_vec;
     const size_t local_pattern_count = size_t{1} << variable_map.size();
     if (root_stp_vec.size() <= local_pattern_count)

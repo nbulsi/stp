@@ -13,7 +13,7 @@ typedef struct
   stp_data *d_Vec = nullptr;
   stp_data _col = 0;
   stp_data _row = 0;
-  int32_t need_release = 0;
+  int32_t need_release = 0; // nonzero means the wrapper owns d_Vec
 } CUDA_DATA;
 
 #ifdef ENABLE_CUDA

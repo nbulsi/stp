@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,7 +20,6 @@ std::string simulate_lut_bench(std::istream &input)
   LutParser parser;
   REQUIRE(parser.parse(input, graph));
 
-  _using_CUDA = false;
   simulator sim(graph);
   REQUIRE(sim.simulate());
   std::ostringstream report;
@@ -40,6 +40,51 @@ TEST_CASE("lutsim accepts LF and CRLF BENCH files", "[lutsim]")
   CHECK(simulate_lut_bench(crlf_input).find("0x8") != std::string::npos);
 }
 
+TEST_CASE("lutsim reports malformed LUT statements", "[lutsim][parser]")
+{
+  std::istringstream input("INPUT(a)\nINPUT(b)\nOUTPUT(y)\ny = LUT 0x8 (a, b, c)\n");
+  CircuitGraph graph;
+  LutParser parser;
+
+  CHECK_FALSE(parser.parse(input, graph));
+  CHECK(parser.error().find("line 4") != std::string::npos);
+  CHECK(parser.error().find("truth table width") != std::string::npos);
+}
+
+TEST_CASE("lutsim can simulate a graph more than once", "[lutsim][regression]")
+{
+  std::istringstream input("INPUT(a)\nINPUT(b)\nOUTPUT(y)\ny = LUT 0x8 (a, b)\n");
+  CircuitGraph graph;
+  LutParser parser;
+  REQUIRE(parser.parse(input, graph));
+
+  simulator sim(graph);
+  REQUIRE(sim.simulate());
+  std::ostringstream first;
+  sim.print_simulation_result(first);
+
+  REQUIRE(sim.simulate());
+  std::ostringstream second;
+  sim.print_simulation_result(second);
+  CHECK(second.str() == first.str());
+}
+
+TEST_CASE("lutsim rejects combinational cycles", "[lutsim][validation]")
+{
+  stp_vec type(3);
+  type(0) = 2;
+  type(1) = 1;
+  type(2) = 0;
+
+  CircuitGraph graph;
+  graph.add_gate(type, {"b"}, "a");
+  graph.add_gate(type, {"a"}, "b");
+  graph.add_output("a");
+
+  simulator sim(graph);
+  CHECK_THROWS_AS(sim.simulate(), std::runtime_error);
+}
+
 TEST_CASE("lutsim simulates the CRLF cma152a benchmark", "[lutsim][regression]")
 {
   std::ifstream input(std::string(STP_SOURCE_DIR) + "/test/benchmarks/mcnc/cma152a.bench");
@@ -54,6 +99,7 @@ TEST_CASE("lutsim simulates the CRLF cma152a benchmark", "[lutsim][regression]")
 TEST_CASE("lutsim does not expand primary inputs outside the output cone", "[lutsim][scaling]")
 {
   std::istringstream input("INPUT(unused0)\nINPUT(a)\nINPUT(unused1)\nINPUT(b)\nOUTPUT(y)\n"
+                           "unused = LUT 0x8 (unused0, unused1)\n"
                            "y = LUT 0x8 (a, b)\n");
 
   const std::string report = simulate_lut_bench(input);
@@ -170,7 +216,11 @@ TEST_CASE("CPU simulation backends agree on a multi-fanout circuit", "[lutsim][b
 #ifdef ENABLE_CUDA
 TEST_CASE("GPU simulation backends agree with STP CPU", "[lutsim][cuda][backend]")
 {
-  Get_Total_Thread_Num();
+  if (!Get_Total_Thread_Num())
+  {
+    WARN("CUDA runtime is unavailable; skipping GPU backend comparison");
+    return;
+  }
 
   constexpr const char *bench = "INPUT(a)\nINPUT(b)\nINPUT(c)\nOUTPUT(y)\n"
                                 "shared = LUT 0x6 (a, b)\n"
@@ -194,7 +244,6 @@ TEST_CASE("GPU simulation backends agree with STP CPU", "[lutsim][cuda][backend]
   const std::string cpu_result = run(SimulationBackend::StpCpu);
   CHECK(run(SimulationBackend::StpGpu) == cpu_result);
   CHECK(run(SimulationBackend::HybridGpu) == cpu_result);
-  _using_CUDA = false;
 }
 #endif
 
@@ -212,7 +261,6 @@ TEST_CASE("dsd decomposes and writes a functionally equivalent BENCH", "[dsd]")
   LutParser parser;
   REQUIRE(parser.parse(input, graph));
 
-  _using_CUDA = false;
   simulator sim(graph);
   REQUIRE(sim.simulate());
   std::ostringstream report;
@@ -236,7 +284,6 @@ TEST_CASE("dsd enumeration preserves variables in recursive expressions", "[dsd]
   LutParser parser;
   REQUIRE(parser.parse(input, graph));
 
-  _using_CUDA = false;
   simulator sim(graph);
   REQUIRE(sim.simulate());
   std::ostringstream report;
@@ -260,7 +307,6 @@ TEST_CASE("idsd completes don't-care entries while preserving specified values",
   LutParser parser;
   REQUIRE(parser.parse(input, graph));
 
-  _using_CUDA = false;
   simulator sim(graph);
   REQUIRE(sim.simulate());
   std::ostringstream report;
@@ -294,7 +340,6 @@ TEST_CASE("approximate dsd reports the distance of the emitted BENCH", "[approxi
   CircuitGraph graph;
   LutParser parser;
   REQUIRE(parser.parse(input, graph));
-  _using_CUDA = false;
   simulator sim(graph);
   REQUIRE(sim.simulate());
   std::ostringstream report;

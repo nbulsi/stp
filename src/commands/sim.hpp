@@ -144,7 +144,10 @@ protected:
     LutParser parser;
     if (!parser.parse(input, graph))
     {
-      std::cout << "can't parse file " << filename << std::endl;
+      std::cout << "can't parse file " << filename;
+      if (!parser.error().empty())
+        std::cout << ": " << parser.error();
+      std::cout << std::endl;
       return;
     }
     SimulationBackend backend;

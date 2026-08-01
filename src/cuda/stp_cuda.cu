@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -11,6 +12,31 @@
 #include <cusparse.h>
 
 #include <stp/sim/execute_cuda.hpp>
+
+namespace
+{
+void check_cuda(const cudaError_t status, const char *operation)
+{
+  if (status != cudaSuccess)
+    throw std::runtime_error(std::string(operation) + ": " + cudaGetErrorString(status));
+}
+
+void check_kernel(const char *operation)
+{
+  check_cuda(cudaGetLastError(), operation);
+  check_cuda(cudaDeviceSynchronize(), operation);
+}
+
+void release_owned(CUDA_DATA &data)
+{
+  if (data.d_Vec != nullptr && data.need_release != 0)
+  {
+    check_cuda(cudaFree(data.d_Vec), "cudaFree");
+    data.d_Vec = nullptr;
+    data.need_release = 0;
+  }
+}
+} // namespace
 
 uint64_t Total_Thread = 0; // total supported threads
 
@@ -59,23 +85,23 @@ extern "C"
 
 extern "C" CUDA_DATA Memcpy_To_Device(std::vector<stp_data> &A)
 {
+  if (A.empty())
+    throw std::invalid_argument("cannot copy an empty STP vector to CUDA");
+
   CUDA_DATA C;
   C._row = A[0];
   C._col = A.size() - 1;
+  C.need_release = 1;
 
   // compute space
   size_t size_A = (A.size() - 1) * sizeof(stp_data);
 
   // allocate memory
-  cudaError_t errC = cudaMalloc((void **)&C.d_Vec, size_A);
-  if (errC != cudaSuccess)
-  {
-    std::cerr << "Error allocating memory for In_KR_Matrix d_C: " << cudaGetErrorString(errC)
-              << std::endl;
-  }
+  check_cuda(cudaMalloc((void **)&C.d_Vec, size_A), "cudaMalloc for device vector");
 
   // Copy parameters
-  cudaMemcpy(C.d_Vec, A.data() + 1, size_A, cudaMemcpyHostToDevice);
+  check_cuda(cudaMemcpy(C.d_Vec, A.data() + 1, size_A, cudaMemcpyHostToDevice),
+             "cudaMemcpy host to device");
 
   return C;
 }
@@ -84,6 +110,9 @@ extern "C"
     // release GPU memory
     bool Free_Device_Memory(CUDA_DATA &C)
 {
+  if (C.d_Vec == nullptr)
+    return true;
+
   cudaError_t err = cudaFree(C.d_Vec);
   if (err != cudaSuccess)
   {
@@ -91,15 +120,21 @@ extern "C"
               << std::endl;
     return false;
   }
+  C.d_Vec = nullptr;
+  C.need_release = 0;
   return true;
 }
 
 extern "C" std::vector<stp_data> Memcpy_To_Host(CUDA_DATA &C)
 {
+  if (C.d_Vec == nullptr && C._col != 0)
+    throw std::invalid_argument("cannot copy a null CUDA vector to the host");
+
   std::vector<stp_data> A(C._col + 1);
   A[0] = C._row;
-  cudaMemcpy(A.data() + 1, C.d_Vec, (C._col) * sizeof(stp_data), cudaMemcpyDeviceToHost);
-  cudaFree(C.d_Vec);
+  check_cuda(cudaMemcpy(A.data() + 1, C.d_Vec, (C._col) * sizeof(stp_data), cudaMemcpyDeviceToHost),
+             "cudaMemcpy device to host");
+  release_owned(C);
 
   return A;
 }
@@ -127,6 +162,9 @@ __global__ void In_KR_Matrix_Kernel(int32_t sub_dim, int32_t idx_offset, stp_dat
 
 extern "C" CUDA_DATA my_cuda_In_KR_Matrix(int32_t dim, CUDA_DATA &A)
 {
+  if (Total_Thread == 0)
+    throw std::runtime_error("CUDA thread capacity is not initialized");
+
   // Get the dimensions of matrix A
   stp_data A_row = A._row;
   stp_data A_col = A._col;
@@ -139,20 +177,13 @@ extern "C" CUDA_DATA my_cuda_In_KR_Matrix(int32_t dim, CUDA_DATA &A)
   C._col = A_col * dim;
 
   // Assign the number of rows of result matrix
-  stp_data *d_C;
+  stp_data *d_C = nullptr;
 
   // compute space
   size_t size_C = C_len * sizeof(stp_data);
 
   // allocate memory
-  cudaError_t errC;
-
-  errC = cudaMalloc((void **)&d_C, size_C);
-  if (errC != cudaSuccess)
-  {
-    std::cerr << "Error allocating memory for In_KR_Matrix d_C: " << cudaGetErrorString(errC)
-              << std::endl;
-  }
+  check_cuda(cudaMalloc((void **)&d_C, size_C), "cudaMalloc for In_KR_Matrix result");
 
   // Calculate the block size (maximum 1024)
   dim3 threadsPerBlock(1024, 1);
@@ -165,7 +196,7 @@ extern "C" CUDA_DATA my_cuda_In_KR_Matrix(int32_t dim, CUDA_DATA &A)
 
     // Launch GPU
     In_KR_Matrix_Kernel<<<numBlocks0, threadsPerBlock>>>(dim, 0, A.d_Vec, A_row, A_col, d_C, C_len);
-    cudaDeviceSynchronize(); // Wait for the kernel to complete
+    check_kernel("In_KR_Matrix kernel");
   }
   // Divide into blocks (by column)
   else
@@ -183,7 +214,7 @@ extern "C" CUDA_DATA my_cuda_In_KR_Matrix(int32_t dim, CUDA_DATA &A)
 
         In_KR_Matrix_Kernel<<<numBlocks, threadsPerBlock>>>(dim, idx_offset, A.d_Vec, A_row, A_col,
                                                             d_C, C_len);
-        cudaDeviceSynchronize(); // Wait for the kernel to complete
+        check_kernel("In_KR_Matrix kernel");
         // Calculate the thread offset
         idx_offset += remain_num;
         remain_num = 0; // exit the loop
@@ -196,7 +227,7 @@ extern "C" CUDA_DATA my_cuda_In_KR_Matrix(int32_t dim, CUDA_DATA &A)
 
         In_KR_Matrix_Kernel<<<numBlocks, threadsPerBlock>>>(dim, idx_offset, A.d_Vec, A_row, A_col,
                                                             d_C, C_len);
-        cudaDeviceSynchronize(); // Wait for the kernel to complete
+        check_kernel("In_KR_Matrix kernel");
 
         // Calculate thread offset
         idx_offset += Total_Thread;
@@ -210,8 +241,9 @@ extern "C" CUDA_DATA my_cuda_In_KR_Matrix(int32_t dim, CUDA_DATA &A)
   //  {
   //      cudaFree(A.d_Vec);
   //  }
-  cudaFree(A.d_Vec);
+  release_owned(A);
   C.d_Vec = d_C;
+  C.need_release = 1;
 
   return C;
 }
@@ -242,6 +274,9 @@ extern "C"
     // Matrix_KR_In
     CUDA_DATA my_cuda_Matrix_KR_In(int32_t dim, CUDA_DATA &A)
 {
+  if (Total_Thread == 0)
+    throw std::runtime_error("CUDA thread capacity is not initialized");
+
   // get dimensions of matrix A
   stp_data A_row = A._row;
   stp_data A_col = A._col;
@@ -253,19 +288,12 @@ extern "C"
   C._row = A_row * dim;
   C._col = A_col * dim;
 
-  stp_data *d_C;
+  stp_data *d_C = nullptr;
   // compute space
   size_t size_C = C_len * sizeof(stp_data);
 
   // allocate memory
-  cudaError_t errC;
-
-  errC = cudaMalloc((void **)&d_C, size_C);
-  if (errC != cudaSuccess)
-  {
-    std::cerr << "Error allocating memory for Matrix_KR_In d_C: " << cudaGetErrorString(errC)
-              << std::endl;
-  }
+  check_cuda(cudaMalloc((void **)&d_C, size_C), "cudaMalloc for Matrix_KR_In result");
 
   // calculate block size (maximum 1024)
   dim3 threadsPerBlock(1024, 1);
@@ -277,7 +305,7 @@ extern "C"
     dim3 numBlocks((C_len + 1024 - 1) / 1024, 1);
 
     Matrix_KR_In_Kernel<<<numBlocks, threadsPerBlock>>>(dim, 0, A.d_Vec, A_col, d_C, C_len);
-    cudaDeviceSynchronize(); // wait for the kernel to complete
+    check_kernel("Matrix_KR_In kernel");
   }
   // divide into blocks (by column)
   else
@@ -295,7 +323,7 @@ extern "C"
 
         Matrix_KR_In_Kernel<<<numBlocks, threadsPerBlock>>>(dim, idx_offset, A.d_Vec, A_col, d_C,
                                                             C_len);
-        cudaDeviceSynchronize(); // wait for the kernel to complete
+        check_kernel("Matrix_KR_In kernel");
         // calculate thread offset
         idx_offset += remain_num;
         remain_num = 0; // exit the loop
@@ -308,7 +336,7 @@ extern "C"
 
         Matrix_KR_In_Kernel<<<numBlocks, threadsPerBlock>>>(dim, idx_offset, A.d_Vec, A_col, d_C,
                                                             C_len);
-        cudaDeviceSynchronize(); // wait for the kernel to complete
+        check_kernel("Matrix_KR_In kernel");
 
         // calculate thread offset
         idx_offset += Total_Thread;
@@ -322,9 +350,10 @@ extern "C"
   //  {
   //      cudaFree(A.d_Vec);
   //  }
-  cudaFree(A.d_Vec);
+  release_owned(A);
 
   C.d_Vec = d_C;
+  C.need_release = 1;
 
   return C;
 }
@@ -356,6 +385,9 @@ extern "C"
     // my_semi_tensor_product
     CUDA_DATA my_cuda_semi_tensor_product(CUDA_DATA &A, CUDA_DATA &B)
 {
+  if (Total_Thread == 0)
+    throw std::runtime_error("CUDA thread capacity is not initialized");
+
   // get dimensions of matrix A and B
   int32_t A_row = A._row;
   int32_t A_col = A._col;
@@ -376,17 +408,10 @@ extern "C"
 
     size_t size_C = C_len * sizeof(stp_data);
 
-    stp_data *d_C;
+    stp_data *d_C = nullptr;
 
     // allocate memory
-    cudaError_t errC;
-
-    errC = cudaMalloc((void **)&d_C, size_C);
-    if (errC != cudaSuccess)
-    {
-      std::cerr << "Error allocating memory for my_semi_tensor_product d_C: "
-                << cudaGetErrorString(errC) << std::endl;
-    }
+    check_cuda(cudaMalloc((void **)&d_C, size_C), "cudaMalloc for semi-tensor product result");
 
     // calculate block size (maximum 1024)
     dim3 threadsPerBlock(1024, 1);
@@ -399,7 +424,7 @@ extern "C"
                                                              d_C, C_len, A_col / B_row);
 
       // wait for all threads to complete
-      cudaDeviceSynchronize();
+      check_kernel("semi-tensor product kernel");
     }
     else
     {
@@ -416,7 +441,7 @@ extern "C"
 
           Matrix_Multipiy_Kernel<<<numBlocks, threadsPerBlock>>>(
               idx_offset, A.d_Vec, A._col, B.d_Vec, B._col, d_C, C_len, A_col / B_row);
-          cudaDeviceSynchronize(); // wait for the kernel to complete
+          check_kernel("semi-tensor product kernel");
           // calculate thread offset
           idx_offset += remain_num;
           remain_num = 0; // exit the loop
@@ -429,10 +454,7 @@ extern "C"
 
           Matrix_Multipiy_Kernel<<<numBlocks, threadsPerBlock>>>(
               idx_offset, A.d_Vec, A_col, B.d_Vec, B_col, d_C, C_len, A_col / B_row);
-          cudaDeviceSynchronize(); // wait for the kernel to complete
-          // calculate thread offset
-          // idx_offset += Total_Thread;
-          cudaDeviceSynchronize(); // wait for the kernel to complete
+          check_kernel("semi-tensor product kernel");
           // calculate thread offset
           idx_offset += Total_Thread;
           remain_num -= Total_Thread; // exit the loop
@@ -450,9 +472,10 @@ extern "C"
     //      cudaFree(B.d_Vec);
     //  }
 
-    cudaFree(A.d_Vec);
-    cudaFree(B.d_Vec);
+    release_owned(A);
+    release_owned(B);
     C.d_Vec = d_C;
+    C.need_release = 1;
 
     return C;
   }
