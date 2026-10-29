@@ -4,5 +4,6 @@
 #include "commands/approximate_dsd.hpp"
 #include "commands/dsd.hpp"
 #include "commands/sim.hpp"
+#include "commands/lut_xx.hpp"
 
 ALICE_MAIN(stp)
