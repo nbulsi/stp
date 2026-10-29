@@ -4,4 +4,6 @@ if (NOT TARGET fmt)
   target_compile_definitions(fmt INTERFACE FMT_HEADER_ONLY)
 endif()
 
-add_subdirectory(alice)
+if(NOT TARGET alice)
+    add_subdirectory(alice)
+endif()
