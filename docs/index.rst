@@ -14,4 +14,5 @@ Welcome to STP-based Logic Synthesis Tool's documentation!
    quickstart
    expressions
    simulation
+   decomposition
    testing
