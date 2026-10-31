@@ -10,6 +10,7 @@ This project is developed and maintained by Prof. Zhufei Chu’s research group 
 
 - Ruibing Zhang
 - Yanzhen Wang
+- Jingning Yu
 
 ## Notes
 
