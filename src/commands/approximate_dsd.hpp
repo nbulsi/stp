@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <alice/alice.hpp>
+#include "../stores/session.hpp"
 #include <chrono>
 #include <functional>
 #include <iomanip>
@@ -81,9 +81,24 @@ protected:
   void execute() override
   {
     approximate_dsd_option_reset_guard reset([this]() { reset_options(); });
+    const bool from_store = truth_table.empty();
+    if (from_store)
+    {
+      try
+      {
+        truth_table = current_truth(env);
+      }
+      catch (const std::exception &error)
+      {
+        env->out() << "[e] " << error.what() << '\n';
+        return;
+      }
+    }
     std::vector<std::string> variables_msb;
     std::string error;
-    if (!is_set("inputs"))
+    if (from_store && !is_set("inputs"))
+      variables_msb = current_truth_variables(env);
+    else if (!is_set("inputs"))
     {
       if (!infer_approximate_dsd_variables(truth_table, variables_msb, error))
       {
@@ -111,6 +126,7 @@ protected:
       env->out() << "[e] " << result.error << std::endl;
       return;
     }
+    save_bench_result(env, filename);
     env->out() << "[i] Hamming distance = " << result.hamming_distance << " (limit " << max_error
                << ")" << std::endl;
     env->out() << "[i] LSB-aware error rank = " << result.weighted_error

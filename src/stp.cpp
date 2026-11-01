@@ -4,6 +4,8 @@
 #include "commands/approximate_dsd.hpp"
 #include "commands/dsd.hpp"
 #include "commands/lut_xx.hpp"
+#include "commands/read.hpp"
+#include "commands/show.hpp"
 #include "commands/sim.hpp"
 
 #if defined(ALICE_PYTHON) || defined(ALICE_CINTERFACE)
