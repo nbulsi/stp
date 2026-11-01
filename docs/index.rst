@@ -16,4 +16,5 @@ Welcome to STP-based Logic Synthesis Tool's documentation!
    simulation
    decomposition
    visualization
+   storage
    testing

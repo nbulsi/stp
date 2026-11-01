@@ -1,5 +1,5 @@
 #pragma once
-#include <alice/alice.hpp>
+#include "../stores/session.hpp"
 #include <stp/lutxx/decompose.hpp>
 #include <utility>
 
@@ -28,6 +28,8 @@ protected:
     const auto output_name = std::exchange(output, "po");
     try
     {
+      if (text.empty())
+        text = "0b" + current_truth_bits(env);
       const auto bits = stp::lutxx::parse_table(text);
       auto result = stp::lutxx::decompose(bits, k);
       if (!result.found)
@@ -43,6 +45,7 @@ protected:
       while ((size_t{1} << variable_count) < bits.size())
         ++variable_count;
       stp::lutxx::write_bench(result, variable_count, bench_filename, output_name);
+      save_bench_result(env, bench_filename);
       env->out() << "[i] LUT result written to " << bench_filename << '\n';
     }
     catch (const std::exception &e)

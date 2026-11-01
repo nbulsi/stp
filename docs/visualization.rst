@@ -15,6 +15,35 @@ PNG and SVG rendering require Graphviz's ``dot`` executable on ``PATH``.
 Use ``-o circuit.svg`` for SVG, or ``-o circuit.dot`` to export DOT without
 rendering or opening a viewer. DOT export needs no external tool.
 
+Install Graphviz to generate images
+----------------------------------
+
+On macOS (Homebrew)::
+
+  brew install graphviz
+
+On Ubuntu/Debian::
+
+  sudo apt update
+  sudo apt install graphviz
+
+Verify the executable is available::
+
+  dot -V
+
+See the `Graphviz downloads page <https://graphviz.org/download/>`_ for other
+systems. If ``dot`` is missing from ``PATH``, ``show`` still writes the DOT
+file and prints an installation hint, but does not generate or open an image.
+Install Graphviz and rerun ``show``, or explicitly export DOT only::
+
+  show input.bench -o circuit.dot
+
+An installed ``dot`` that fails to render is reported as an error; the DOT
+file is retained.
+
+Diagram conventions
+-------------------
+
 Inputs are blue circles and outputs are pale orange ellipses. Common LUT
 functions show only their function name, without signal names or input counts:
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <alice/alice.hpp>
+#include "../stores/session.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -21,26 +21,49 @@ public:
     add_option("filename", filename, "input LUT BENCH file");
     add_option("-o,--output", output,
                "output .png, .svg, or .dot file (default: input basename.png)");
+    add_flag("-t,--truth", use_truth, "show the current truth table");
+    add_flag("-b,--bench", use_bench, "show the current BENCH circuit");
     add_flag("--no-open", no_open, "generate files without opening a viewer");
   }
 
 protected:
   void execute() override
   {
-    const auto input_name = std::exchange(filename, {});
+    auto input_name = std::exchange(filename, {});
     auto output_name = std::exchange(output, {});
     const bool skip_open = std::exchange(no_open, false);
+    const bool truth = std::exchange(use_truth, false);
+    const bool bench = std::exchange(use_bench, false);
     try
     {
-      if (input_name.empty())
-        throw std::runtime_error("provide a LUT BENCH filename");
-      std::ifstream input(input_name);
-      if (!input)
-        throw std::runtime_error("cannot open " + input_name);
+      if ((truth && bench) || (!input_name.empty() && (truth || bench)))
+        throw std::runtime_error("choose a filename or one store (-t/-b)");
       CircuitGraph graph;
-      LutParser parser;
-      if (!parser.parse(input, graph))
-        throw std::runtime_error(parser.error());
+      if (!input_name.empty())
+      {
+        auto entry = stp::read_bench_snapshot(input_name);
+        graph = std::move(entry.graph);
+      }
+      else
+      {
+        const bool choose_truth = truth || (!bench && env->default_option() == "truth");
+        if (choose_truth)
+        {
+          const auto &entries = store<stp::StoredTruth>();
+          if (entries.empty())
+            throw std::runtime_error("truth store is empty; use read_truth first");
+          graph = entries.current().graph;
+          input_name = "truth_" + std::to_string(entries.current_index()) + ".bench";
+        }
+        else
+        {
+          const auto &entries = store<stp::StoredBench>();
+          if (entries.empty())
+            throw std::runtime_error("BENCH store is empty; use read_bench or read_truth first");
+          graph = entries.current().graph;
+          input_name = entries.current().name;
+        }
+      }
       graph.match_logic_depth();
       if (output_name.empty())
         output_name =
@@ -64,6 +87,15 @@ protected:
       env->out() << "[i] DOT written to " << dot_path.string() << '\n';
       if (extension != ".dot")
       {
+        if (std::system("command -v dot >/dev/null 2>&1") != 0)
+        {
+          env->out() << "[w] Graphviz 'dot' was not found on PATH. Only DOT was generated; "
+                        "no image was rendered or opened.\n"
+                        "[i] Install Graphviz: macOS: brew install graphviz; "
+                        "Ubuntu/Debian: sudo apt install graphviz\n"
+                     << "[i] Then rerun show, or render the saved DOT file with dot.\n";
+          return;
+        }
         // Quote filenames as literal POSIX shell arguments, including embedded quotes.
         auto quote = [](const std::string &s) {
           std::string result = "'";
@@ -103,6 +135,12 @@ protected:
 
 private:
   std::string filename, output;
-  bool no_open = false;
+  bool no_open = false, use_truth = false, use_bench = false;
+};
+// Replace Alice's generic store viewer while keeping its store/current commands.
+template <> class show_command<stp::StoredTruth, stp::StoredBench> : public circuit_show_command
+{
+public:
+  using circuit_show_command::circuit_show_command;
 };
 } // namespace alice

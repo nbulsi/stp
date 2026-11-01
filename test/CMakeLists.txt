@@ -11,3 +11,9 @@ if(STP_ENABLE_CUDA AND TARGET stp_cuda)
 endif()
 
 add_test(NAME exprsim_tests COMMAND exprsim_tests)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME session_cli_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_case/session_cli_test.py $<TARGET_FILE:stp>)
+endif()

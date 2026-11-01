@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <alice/alice.hpp>
+#include "../stores/session.hpp"
 #include <cctype>
 #include <chrono>
 #include <functional>
@@ -142,9 +142,24 @@ protected:
   void execute() override
   {
     command_option_reset_guard reset([this]() { reset_options(); });
+    const bool from_store = truth_table.empty();
+    if (from_store)
+    {
+      try
+      {
+        truth_table = current_truth(env);
+      }
+      catch (const std::exception &error)
+      {
+        env->out() << "[e] " << error.what() << '\n';
+        return;
+      }
+    }
     std::vector<std::string> variables_msb;
     std::string error;
-    if (!is_set("inputs"))
+    if (from_store && !is_set("inputs"))
+      variables_msb = current_truth_variables(env);
+    else if (!is_set("inputs"))
     {
       if (!infer_dsd_variables(truth_table, variables_msb, error))
       {
@@ -170,6 +185,7 @@ protected:
       return;
     }
 
+    save_bench_result(env, filename);
     if (enumerate_all)
     {
       env->out() << "[i] " << result.solutions.size() << " ACD solutions found. " << std::endl;
@@ -223,9 +239,24 @@ protected:
   void execute() override
   {
     command_option_reset_guard reset([this]() { reset_options(); });
+    const bool from_store = truth_table.empty();
+    if (from_store)
+    {
+      try
+      {
+        truth_table = current_truth_bits(env);
+      }
+      catch (const std::exception &error)
+      {
+        env->out() << "[e] " << error.what() << '\n';
+        return;
+      }
+    }
     std::vector<std::string> variables_msb;
     std::string error;
-    if (!is_set("inputs"))
+    if (from_store && !is_set("inputs"))
+      variables_msb = current_truth_variables(env);
+    else if (!is_set("inputs"))
     {
       if (!infer_idsd_variables(truth_table, variables_msb, error))
       {
@@ -248,6 +279,7 @@ protected:
       return;
     }
 
+    save_bench_result(env, filename);
     if (is_set("enumerate"))
       env->out() << "[i] " << result.solutions.size() << " ACD solutions found. " << std::endl;
     for (size_t index = 0; index < result.solutions.size(); ++index)
