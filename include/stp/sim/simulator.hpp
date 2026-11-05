@@ -21,6 +21,7 @@
 
 #include <stp/core/circuit_graph.hpp>
 #include <stp/io/expr_parser.hpp>
+#include <stp/sim/boolean_plan.hpp>
 
 class SimulationThreadPool
 {
@@ -154,7 +155,10 @@ enum class SimulationBackend
 {
   StpCpu,
   StpGpu,
+  StpFullCpu,
+  StpFullGpu,
   BitSlice,
+  BitSliceGpu,
   HybridCpu,
   HybridGpu
 };
@@ -167,8 +171,14 @@ inline const char *simulation_backend_name(const SimulationBackend backend)
       return "stp-cpu";
     case SimulationBackend::StpGpu:
       return "stp-gpu";
+    case SimulationBackend::StpFullCpu:
+      return "stp-full-cpu";
+    case SimulationBackend::StpFullGpu:
+      return "stp-full-gpu";
     case SimulationBackend::BitSlice:
       return "bitslice";
+    case SimulationBackend::BitSliceGpu:
+      return "bitslice-gpu";
     case SimulationBackend::HybridCpu:
       return "hybrid-cpu";
     case SimulationBackend::HybridGpu:
@@ -226,8 +236,14 @@ public:
       case SimulationBackend::HybridGpu:
         initialize_inputs();
         return simulate_stp(true, true);
+      case SimulationBackend::BitSliceGpu:
+        return simulate_bitslice_gpu();
       case SimulationBackend::BitSlice:
         initialize_inputs();
+      case SimulationBackend::StpFullCpu:
+        return simulate_stp_full(false);
+      case SimulationBackend::StpFullGpu:
+        return simulate_stp_full(true);
         break;
     }
 
@@ -315,6 +331,11 @@ private:
     return static_cast<unsigned>((table[pattern / word_bits] >> (pattern % word_bits)) & 1u);
   }
 
+  bool simulate_stp_full(const bool use_gpu)
+  {
+    return simulate_stp(use_gpu, false, true);
+  }
+
   bool is_const_zero(const line_idx output) const
   {
     return std::all_of(sim_info[output].begin(), sim_info[output].end(),
@@ -370,7 +391,21 @@ private:
     }
   }
 
-  bool simulate_stp(const bool use_gpu, const bool bit_sliced_apply)
+  bool simulate_bitslice_gpu()
+  {
+#ifndef ENABLE_CUDA
+    std::cerr << "GPU bit-slice backend is unavailable in this build\n";
+    return false;
+#else
+    const auto plan = stp::compile_boolean_plan(graph, active_inputs);
+    auto outputs = stp::simulate_boolean_cuda(plan, pattern_num);
+    for (size_t i = 0; i < graph.get_outputs().size(); ++i)
+      sim_info[graph.get_outputs()[i]] = std::move(outputs[i]);
+    return true;
+#endif
+  }
+
+  bool simulate_stp(const bool use_gpu, const bool bit_sliced_apply,const bool full_circuit = false)
   {
     if (use_gpu)
     {
@@ -407,9 +442,60 @@ private:
     for (const auto line : active_inputs)
       stp_lines_flag[line] = true;
 
-    const auto nodes = get_stp_simulation_nodes();
-    for (const auto node : nodes)
-      simulate_stp_node(node, bit_sliced_apply, use_gpu);
+    // const auto nodes = get_stp_simulation_nodes();
+    // for (const auto node : nodes)
+    //   simulate_stp_node(node, bit_sliced_apply, use_gpu);
+
+    if (full_circuit)
+    {
+      // 不分割：对每个 PO 展开完整逻辑锥
+      for (const auto output : graph.get_outputs())
+      {
+        // 每次只将原始 PI 作为 STP 变量边界
+        std::fill(
+            stp_lines_flag.begin(),
+            stp_lines_flag.end(),
+            false
+        );
+
+        for (const auto input : active_inputs)
+          stp_lines_flag[input] = true;
+
+        const auto source = graph.get_lines()[output].source;
+
+        if (source == NULL_INDEX)
+        {
+          // PO 直接连接 PI，不需要计算
+          if (std::find(
+                  active_inputs.begin(),
+                  active_inputs.end(),
+                  output) != active_inputs.end())
+            continue;
+
+          std::cerr << "PO has no valid driver\n";
+          return false;
+        }
+
+        // 从 PO 向前递归，直到 PI
+        simulate_stp_node(
+            source,
+            bit_sliced_apply,
+            use_gpu
+        );
+      }
+    }
+    else
+    {
+      // 原来的分割 STP，完全保留
+      const auto nodes = get_stp_simulation_nodes();
+
+      for (const auto node : nodes)
+        simulate_stp_node(
+            node,
+            bit_sliced_apply,
+            use_gpu
+        );
+    }
 
     for (const auto output : graph.get_outputs())
     {
@@ -512,7 +598,7 @@ private:
     std::map<line_idx, int> variable_map;
     std::vector<stp::expr_node> lut_chain;
     build_stp_chain(node_id, lut_chain, variable_map);
-
+    //build_stp_chain_new(node_id, lut_chain, variable_map);
     std::vector<int64_t> old_input_order(variable_map.size());
     for (size_t index = 0; index < old_input_order.size(); ++index)
       old_input_order[index] = static_cast<int64_t>(index);
@@ -558,6 +644,8 @@ private:
     stp_lines_flag[output] = true;
   }
 
+
+  
   void build_stp_chain(const gate_idx node_id, std::vector<stp::expr_node> &lut_chain,
                        std::map<line_idx, int> &variable_map)
   {
@@ -585,6 +673,110 @@ private:
       }
     }
   }
+
+  void build_stp_chain_new(
+    const gate_idx node_id,
+    std::vector<stp::expr_node> &lut_chain,
+    std::map<line_idx, int> &variable_map)
+{
+    const auto &node = graph.get_gates()[node_id];
+
+    // 复制输入顺序和 LUT 矩阵
+    const auto &original_inputs = node.get_inputs();
+    std::vector<line_idx> inputs(
+        original_inputs.begin(),
+        original_inputs.end()
+    );
+
+    auto lut = node.get_type().vec;
+
+    // 计算一个子树内部包含多少个门
+    auto subtree_size = [&](auto &&self, line_idx line) -> size_t {
+        if (stp_lines_flag[line])
+            return 0;
+
+        const auto source = graph.get_lines()[line].source;
+
+        if (source == NULL_INDEX)
+            throw std::runtime_error("invalid STP input");
+
+        size_t count = 1;
+
+        for (auto child : graph.get_gates()[source].get_inputs())
+            count += self(self, child);
+
+        return count;
+    };
+
+    // 二输入 LUT：选择读取顺序
+    if (inputs.size() == 2 &&
+        lut.size() == 5 &&
+        lut[0] == 2)
+    {
+        size_t left_size =
+            subtree_size(subtree_size, inputs[0]);
+
+        size_t right_size =
+            subtree_size(subtree_size, inputs[1]);
+
+        // 优先处理较大的子树
+        if (right_size > left_size)
+        {
+            std::swap(inputs[0], inputs[1]);
+
+            // 同步交换 LUT 的两个输入维度
+            // 01 和 10 对应的结构矩阵列互换
+            std::swap(lut[2], lut[3]);
+        }
+    }
+
+    // 添加当前 LUT
+    lut_chain.emplace_back(
+        stp::NodeType_Gate,
+        stp::GateType_Lut,
+        0, 0,
+        lut
+    );
+
+    // 按优化后的顺序递归构建矩阵链
+    for (const auto line : inputs)
+    {
+        if (stp_lines_flag[line])
+        {
+            auto position = variable_map.find(line);
+
+            if (position == variable_map.end())
+            {
+                const int next =
+                    static_cast<int>(variable_map.size()) + 1;
+
+                position =
+                    variable_map.emplace(line, next).first;
+            }
+
+            lut_chain.emplace_back(
+                stp::NodeType_Variable,
+                position->second - 1
+            );
+        }
+        else
+        {
+            const auto source = graph.get_lines()[line].source;
+
+            if (source == NULL_INDEX)
+                throw std::runtime_error("invalid STP input");
+
+                build_stp_chain_new(
+                source,
+                lut_chain,
+                variable_map
+            );
+        }
+    }
+}
+
+  
+
   void simulate_gate(const gate_idx gate_id)
   {
     const auto &gate = graph.get_gates()[gate_id];

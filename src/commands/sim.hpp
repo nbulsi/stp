@@ -20,40 +20,52 @@ namespace alice
 {
 namespace
 {
-bool configure_backend(const std::string &name, const bool cuda_alias, SimulationBackend &backend)
+bool configure_backend(const std::string &name, const bool cuda_alias, SimulationBackend &backend,
+                       const SimulationBackend cuda_backend = SimulationBackend::StpGpu)
 {
-  const std::string selected = cuda_alias ? "stp-gpu" : name;
+  const std::string selected = cuda_alias ? simulation_backend_name(cuda_backend) : name;
   if (selected == "stp-cpu")
     backend = SimulationBackend::StpCpu;
   else if (selected == "stp-gpu")
     backend = SimulationBackend::StpGpu;
+  else if (selected == "bitslice-gpu")
+    backend = SimulationBackend::BitSliceGpu;
   else if (selected == "bitslice")
     backend = SimulationBackend::BitSlice;
   else if (selected == "hybrid-cpu")
     backend = SimulationBackend::HybridCpu;
   else if (selected == "hybrid-gpu")
     backend = SimulationBackend::HybridGpu;
+  else if (selected == "stp-full-cpu")
+    backend = SimulationBackend::StpFullCpu;
+  else if (selected == "stp-full-gpu")
+    backend = SimulationBackend::StpFullGpu;
   else
   {
     std::cerr << "unknown simulation backend '" << selected
-              << "'; expected stp-cpu, stp-gpu, bitslice, hybrid-cpu, or hybrid-gpu\n";
+              << "'; expected stp-cpu, stp-gpu, bitslice, bitslice-gpu, hybrid-cpu, or hybrid-gpu\n";
     return false;
   }
 
   const bool use_gpu =
-      backend == SimulationBackend::StpGpu || backend == SimulationBackend::HybridGpu;
+      backend == SimulationBackend::StpGpu ||
+      backend == SimulationBackend::StpFullGpu ||
+      backend == SimulationBackend::HybridGpu ||
+      backend == SimulationBackend::BitSliceGpu;
   if (!use_gpu)
     return true;
 
 #ifdef ENABLE_CUDA
   if (!Get_Total_Thread_Num())
   {
-    std::cerr << "CUDA initialization failed; select a CPU backend to continue\n";
+    std::cerr << "CUDA initialization failed for " << selected
+              << "; select a CPU backend to continue\n";
     return false;
   }
   return true;
 #else
-  std::cerr << "GPU backend requested, but CUDA support is not enabled in this build\n";
+  std::cerr << "GPU backend " << selected
+            << " requested, but CUDA support is not enabled in this build\n";
   return false;
 #endif
 }
@@ -123,9 +135,9 @@ public:
   {
     add_flag("--verbose", "print the detailed input/output truth table");
     add_flag("--no-truth-table", "do not print output truth tables");
-    add_flag("--cuda, -c", "alias for --backend stp-gpu");
+    add_flag("--cuda, -c", "alias for --backend bitslice-gpu (circuit word simulation)");
     add_option("--backend", backend_name,
-               "stp-cpu (default), stp-gpu, bitslice, hybrid-cpu, or hybrid-gpu");
+               "stp-cpu (default), stp-gpu, bitslice, bitslice-gpu, hybrid-cpu, or hybrid-gpu");
     add_option("--threads", threads, "simulation threads; 0 means automatic", true);
     add_option("filename", filename, "input bench file", true);
   }
@@ -151,9 +163,12 @@ protected:
       return;
     }
     SimulationBackend backend;
-    if (configure_backend(backend_name, is_set("cuda") || is_set("-c"), backend))
+    if (configure_backend(backend_name, is_set("cuda") || is_set("-c"), backend,
+                          SimulationBackend::BitSliceGpu))
       simulate_and_report(graph, filename, is_set("verbose"), !is_set("no-truth-table"), backend,
                           threads);
+    std::cout << stp_ops<< " ops " << std::endl;   
+    stp_ops=0;                   
   }
 
 private:
@@ -172,7 +187,7 @@ public:
     add_flag("--no-truth-table", "do not print output truth tables");
     add_flag("--cuda, -c", "alias for --backend stp-gpu");
     add_option("--backend", backend_name,
-               "stp-cpu (default), stp-gpu, bitslice, hybrid-cpu, or hybrid-gpu");
+               "stp-cpu (default), stp-gpu, bitslice, bitslice-gpu, hybrid-cpu, or hybrid-gpu");
     add_option("--threads", threads, "simulation threads; 0 means automatic", true);
     add_option("--inputs", input_order, "comma-separated input order; the first name is the LSB");
     add_option("expression", expression_tokens, "Lisp-style Boolean expression", true);
