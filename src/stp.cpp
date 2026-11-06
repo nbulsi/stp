@@ -7,6 +7,7 @@
 #include "commands/read.hpp"
 #include "commands/show.hpp"
 #include "commands/sim.hpp"
+#include "commands/sopcec.hpp"
 
 #if defined(ALICE_PYTHON) || defined(ALICE_CINTERFACE)
 ALICE_MAIN(stp)

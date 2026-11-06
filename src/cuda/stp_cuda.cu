@@ -6,10 +6,8 @@
 #include <stdexcept>
 #include <string>
 
-#include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
-#include <cusparse.h>
 
 #include <stp/sim/execute_cuda.hpp>
 

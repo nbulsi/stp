@@ -1,0 +1,38 @@
+# Monotone version of EPFL voter function (NOT original EPFL netlist).
+# n=7; output=1 iff at least 4 input bits are 1.
+# Construction: bitonic sorting network, constant-folded, PO-cone pruned.
+# Every internal node is AND or OR, without inversions.
+# A0 corresponds to A[0] in the official EPFL BLIF file.
+INPUT(A0)
+INPUT(A1)
+INPUT(A2)
+INPUT(A3)
+INPUT(A4)
+INPUT(A5)
+INPUT(A6)
+OUTPUT(maj)
+
+n0 = AND(A0, A1)
+n1 = OR(A0, A1)
+n2 = AND(A2, A3)
+n3 = OR(A2, A3)
+n4 = AND(A4, A5)
+n5 = OR(A4, A5)
+n6 = AND(n0, n3)
+n7 = OR(n0, n3)
+n8 = AND(n1, n2)
+n9 = OR(n1, n2)
+n10 = AND(A6, n4)
+n11 = OR(A6, n4)
+n12 = AND(n6, n8)
+n13 = OR(n6, n8)
+n14 = AND(n7, n9)
+n15 = OR(n7, n9)
+n16 = AND(n11, n5)
+n17 = OR(n11, n5)
+n19 = OR(n12, n17)
+n21 = OR(n13, n16)
+n23 = OR(n10, n14)
+n26 = AND(n19, n23)
+n28 = AND(n15, n21)
+maj = AND(n26, n28)

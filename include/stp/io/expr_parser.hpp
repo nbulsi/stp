@@ -10,8 +10,11 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
+#include <limits>
 
 #define STP_K 2
+
 
 namespace stp
 {
@@ -126,9 +129,9 @@ public:
                     const std::vector<int64_t> &old_pi_index, const bool use_cuda = false)
       : expr_chain(expr_chain), input_names(old_pi_index), use_cuda_(use_cuda)
   {
-    // print_expr_chain(expr_chain);
-    normalize_expr_chain();
-    // print_expr_chain(expr_chain);
+    //normalize_expr_chain();
+    normalize_expr_chain_new();
+
     if (use_cuda_)
     {
 #ifdef ENABLE_CUDA
@@ -142,6 +145,7 @@ public:
       from_expr_to_matrix();
     }
     exchange_vars_mixed();
+    //exchange_vars_by_W();
   }
 
   void print_expr_chain(const std::vector<expr_node> &expr_chain)
@@ -187,6 +191,212 @@ public:
     expr_chain = sort_variables(expr_chain, pi_num);
     // print_expr_chain(expr_chain);
   }
+
+  void normalize_expr_chain_new()
+  {
+      // 第一步：先合并重复变量
+      expr_chain = merge_same_variables(expr_chain);
+
+      // 第二步：再把变量统一右移
+      expr_chain = move_vars_to_rightside_new(
+          expr_chain, pi_num
+      );
+
+      // 第三步：建立独立变量顺序信息
+      // 重复变量已消除，正常情况下不再插入 W/Mr
+      if (pi_num != 0)
+          expr_chain = sort_variables(expr_chain, pi_num);
+      else
+      {
+          new_pi_list.clear();
+          old_pi_list.clear();
+      }
+  }
+
+    std::vector<expr_node> merge_same_variables(
+      std::vector<expr_node> chain)
+  {
+      while (true)
+      {
+          size_t left = chain.size();
+          size_t right = chain.size();
+
+          // 1. 寻找一对重复变量
+          for (size_t i = 0; i < chain.size(); ++i)
+          {
+              if (chain[i].Get_NodeType() != NodeType_Variable)
+                  continue;
+
+              for (size_t j = i + 1; j < chain.size(); ++j)
+              {
+                  if (chain[j].Get_NodeType() == NodeType_Variable &&
+                      chain[i].Get_Var_id() == chain[j].Get_Var_id())
+                  {
+                      left = i;
+                      right = j;
+                      break;
+                  }
+              }
+
+              if (right != chain.size())
+                  break;
+          }
+
+          if (right == chain.size())
+              break;
+
+          const auto x = chain[left];
+          const stp_data k = x.Get_Var_k();
+
+          std::vector<expr_node> result;
+
+          result.insert(
+              result.end(),
+              chain.begin(),
+              chain.begin() + left
+          );
+
+          // 2. 把第一个重复变量向右移动
+          for (size_t i = left + 1; i < right;)
+          {
+              if (chain[i].Get_NodeType() == NodeType_Variable)
+              {
+                  // X Y -> W Y X
+                  // W 的参数顺序为 (Y的维度, X的维度)
+                  result.emplace_back(
+                      NodeType_Gate,
+                      GateType_W,
+                      chain[i].Get_Var_k(),
+                      k
+                  );
+
+                  result.push_back(chain[i]);
+                  ++i;
+              }
+              else
+              {
+                  // X M -> (I_k ⊗ M) X
+                  stp_data dim = k;
+
+                  // 兼容之前已经插入的 I
+                  while (i < right &&
+                        chain[i].Get_NodeType() == NodeType_Gate &&
+                        chain[i].Get_GateType() == GateType_I)
+                  {
+                      if (chain[i].Get_dim1() == 0 ||
+                          dim > std::numeric_limits<stp_data>::max()
+                                    / chain[i].Get_dim1())
+                          throw std::overflow_error("I dimension overflow");
+
+                      dim *= chain[i].Get_dim1();
+                      ++i;
+                  }
+
+                  if (i >= right)
+                      throw std::runtime_error("Invalid I marker");
+
+                  result.emplace_back(
+                      NodeType_Gate,
+                      GateType_I,
+                      dim,
+                      0
+                  );
+
+                  result.push_back(chain[i]);
+                  ++i;
+              }
+          }
+
+          // 3. X X -> Mr X
+          result.emplace_back(
+              NodeType_Gate,
+              GateType_Mr,
+              k,
+              0
+          );
+
+          result.push_back(x);
+
+          result.insert(
+              result.end(),
+              chain.begin() + right + 1,
+              chain.end()
+          );
+
+          chain = std::move(result);
+      }
+
+      return chain;
+  }
+
+
+  std::vector<expr_node> move_vars_to_rightside_new(
+    const std::vector<expr_node>& chain,
+    stp_data& pi_num)
+  {
+      std::vector<expr_node> new_chain;
+      std::vector<expr_node> pi_chain;
+
+      stp_data var_dim = 1;
+      stp_data pending_I = 1;
+
+      auto multiply_dim = [](stp_data a, stp_data b) {
+          if (b == 0 ||
+              a > std::numeric_limits<stp_data>::max() / b)
+              throw std::overflow_error("STP dimension overflow");
+          return static_cast<stp_data>(a * b);
+      };
+
+      for (const auto& node : chain)
+      {
+          if (node.Get_NodeType() == NodeType_Variable)
+          {
+              if (pending_I != 1)
+                  throw std::runtime_error("I before variable");
+
+              pi_chain.push_back(node);
+              var_dim = multiply_dim(var_dim, node.Get_Var_k());
+          }
+          else if (node.Get_GateType() == GateType_I)
+          {
+              pending_I = multiply_dim(
+                  pending_I, node.Get_dim1()
+              );
+          }
+          else
+          {
+              // 合并原有 I 与变量右移需要的 I
+              stp_data dim = multiply_dim(var_dim, pending_I);
+
+              if (dim != 1)
+              {
+                  new_chain.emplace_back(
+                      NodeType_Gate,
+                      GateType_I,
+                      dim,
+                      0
+                  );
+              }
+
+              new_chain.push_back(node);
+              pending_I = 1;
+          }
+      }
+
+      if (pending_I != 1)
+          throw std::runtime_error("Trailing I marker");
+
+      pi_num = static_cast<stp_data>(pi_chain.size());
+
+      new_chain.insert(
+          new_chain.end(),
+          pi_chain.begin(),
+          pi_chain.end()
+      );
+
+      return new_chain;
+  }
+
 #ifdef ENABLE_CUDA
   void from_expr_to_matrix_cuda(void)
   {
@@ -455,6 +665,89 @@ public:
       }
     }
   }
+
+  void exchange_vars_by_W()
+{
+    const size_t n = new_pi_list.size();
+
+    // 当前结构矩阵对应的变量顺序
+    std::vector<id> order(n);
+    std::vector<stp_data> dims(n);
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        order[i] = new_pi_list[i].Get_Var_id();
+        dims[i]  = new_pi_list[i].Get_Var_k();
+    }
+
+    // 计算一段变量维度的乘积
+    auto get_dim = [&](size_t begin, size_t end) -> stp_data
+    {
+        stp_data dim = 1;
+
+        for (size_t i = begin; i < end; ++i)
+        {
+            if (dims[i] == 0 ||
+                dim > std::numeric_limits<stp_data>::max() / dims[i])
+                throw std::overflow_error("STP dimension overflow");
+
+            dim *= dims[i];
+        }
+
+        return dim;
+    };
+
+    // 按变量 ID 从 0 到 n-1 恢复原始变量顺序
+    for (size_t target = 0; target < n; ++target)
+    {
+        size_t pos = target;
+
+        // 找到目标变量的位置
+        while (pos < n && order[pos] != static_cast<id>(target))
+            ++pos;
+
+        if (pos == n)
+            throw std::runtime_error("STP variable not found");
+
+        // 通过相邻 W 矩阵逐步交换
+        while (pos > target)
+        {
+            const size_t j = pos - 1;
+
+            // 当前相邻变量维度为 dims[j], dims[pos]
+            // 右乘 W 时，参数使用交换后的输入维度顺序
+            auto W = generate_swap_vec(
+                dims[pos],
+                dims[j]
+            );
+
+            // I_left ⊗ W ⊗ I_right
+            const stp_data left_dim  = get_dim(0, j);
+            const stp_data right_dim = get_dim(pos + 1, n);
+
+            if (right_dim > 1)
+                W = Vec_KR_In(right_dim, W);
+
+            if (left_dim > 1)
+                W = In_KR_Vec(left_dim, W);
+
+            // 真正执行 STP 乘法，不使用真值表索引重排
+            result_vec = Vec_semi_tensor_product(
+                result_vec, W
+            );
+
+            // 更新变量顺序
+            std::swap(order[j], order[pos]);
+            std::swap(dims[j], dims[pos]);
+
+            --pos;
+        }
+    }
+
+    // 与 exchange_vars_mixed() 保持相同的输出格式
+    // 存储结构矩阵的零基行索引，而不是逻辑值
+    out_vec = result_vec;
+}
 
   // exchange variables
   void exchange_vars_mixed(void)
