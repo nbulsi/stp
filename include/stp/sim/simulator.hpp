@@ -448,10 +448,8 @@ private:
 
     if (full_circuit)
     {
-      // 不分割：对每个 PO 展开完整逻辑锥
       for (const auto output : graph.get_outputs())
       {
-        // 每次只将原始 PI 作为 STP 变量边界
         std::fill(
             stp_lines_flag.begin(),
             stp_lines_flag.end(),
@@ -465,7 +463,6 @@ private:
 
         if (source == NULL_INDEX)
         {
-          // PO 直接连接 PI，不需要计算
           if (std::find(
                   active_inputs.begin(),
                   active_inputs.end(),
@@ -476,7 +473,6 @@ private:
           return false;
         }
 
-        // 从 PO 向前递归，直到 PI
         simulate_stp_node(
             source,
             bit_sliced_apply,
@@ -486,7 +482,6 @@ private:
     }
     else
     {
-      // 原来的分割 STP，完全保留
       const auto nodes = get_stp_simulation_nodes();
 
       for (const auto node : nodes)
@@ -708,7 +703,6 @@ private:
         return count;
     };
 
-    // 二输入 LUT：选择读取顺序
     if (inputs.size() == 2 &&
         lut.size() == 5 &&
         lut[0] == 2)
@@ -719,18 +713,13 @@ private:
         size_t right_size =
             subtree_size(subtree_size, inputs[1]);
 
-        // 优先处理较大的子树
         if (right_size > left_size)
         {
             std::swap(inputs[0], inputs[1]);
-
-            // 同步交换 LUT 的两个输入维度
-            // 01 和 10 对应的结构矩阵列互换
             std::swap(lut[2], lut[3]);
         }
     }
 
-    // 添加当前 LUT
     lut_chain.emplace_back(
         stp::NodeType_Gate,
         stp::GateType_Lut,
@@ -738,7 +727,6 @@ private:
         lut
     );
 
-    // 按优化后的顺序递归构建矩阵链
     for (const auto line : inputs)
     {
         if (stp_lines_flag[line])
