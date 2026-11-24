@@ -1,21 +1,18 @@
+# The CLI and tests share the same simulation backend configuration.
+add_library(stp_simulation INTERFACE)
+target_link_libraries(stp_simulation INTERFACE stp_lib)
 
-add_library(stp_lib INTERFACE)
-
-# Include stp headers
-target_include_directories(stp_lib SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/include)
-target_include_directories(stp_lib SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/commands)
-
-#set output directory
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-
-set(SOURCES stp.cpp)
-add_executable(stp ${SOURCES} ${FILENAMES})
-target_link_libraries(stp PRIVATE alice)
-
-
-if(STP_ENABLE_CUDA AND CMAKE_CUDA_COMPILER)
+if(STP_ENABLE_CUDA)
     add_subdirectory(cuda)
-    target_compile_definitions(stp PUBLIC ENABLE_CUDA)
+    target_link_libraries(stp_simulation INTERFACE stp_cuda)
+    target_compile_definitions(stp_simulation INTERFACE ENABLE_CUDA)
 endif()
 
-target_link_libraries(stp PRIVATE fmt Threads::Threads stp_lib)
+add_executable(stp stp.cpp)
+target_link_libraries(stp PRIVATE stp_simulation alice fmt)
+set_target_properties(stp PROPERTIES
+    CXX_STANDARD ${STP_CXX_STANDARD}
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)

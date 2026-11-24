@@ -1,24 +1,15 @@
+# Follow the compiler/toolchain default unless the user selects target GPUs.
+set(STP_CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}" CACHE STRING
+    "CUDA architectures to build for (for example: 80 or 80;86)")
 
-message(STATUS "CMAKE_CUDA_COMPILER: ${CMAKE_CUDA_COMPILER}")
-message(STATUS "STP_ENABLE_CUDA: ${STP_ENABLE_CUDA}")
-
-set(STP_CUDA_ARCHITECTURES "60;70;75;80;86" CACHE STRING
-    "CUDA architectures to build for (for example: 75;80 or 86)")
-message(STATUS "CUDA Architectures: ${STP_CUDA_ARCHITECTURES}")
-
-#Set CUDA compiler options to generate position-independent code
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fPIC")
-
-#Add CUDA source files to the project
-# include directories are handled by root CMakeLists.txt
-
-add_library(stp_cuda  STATIC stp_cuda.cu boolean_cuda.cu)
-target_include_directories(stp_cuda PRIVATE ${PROJECT_SOURCE_DIR}/include)
-set_target_properties( stp_cuda
-                       PROPERTIES
-                       CUDA_ARCHITECTURES "${STP_CUDA_ARCHITECTURES}"
-                       CUDA_SEPARABLE_COMPILATION ON
-                      )
-target_compile_features(stp_cuda PUBLIC cxx_std_17)
-
-target_link_libraries(stp PRIVATE stp_cuda)
+add_library(stp_cuda STATIC stp_cuda.cu boolean_cuda.cu)
+target_link_libraries(stp_cuda PRIVATE stp_lib PUBLIC CUDA::cudart)
+set_target_properties(stp_cuda PROPERTIES
+    CUDA_ARCHITECTURES "${STP_CUDA_ARCHITECTURES}"
+    CUDA_STANDARD ${STP_CXX_STANDARD}
+    CUDA_STANDARD_REQUIRED ON
+    CUDA_EXTENSIONS OFF
+    CUDA_SEPARABLE_COMPILATION ON
+    POSITION_INDEPENDENT_CODE ON
+)
+message(STATUS "STP CUDA architectures: ${STP_CUDA_ARCHITECTURES}")

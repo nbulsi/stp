@@ -10,9 +10,26 @@ Build and run
 
 Configure, build, and run all registered tests::
 
-  cmake -S . -B build
+  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
   cmake --build build --parallel
   ctest --test-dir build --output-on-failure
+
+Use ``Debug`` for debugging or ``RelWithDebInfo`` for optimized code with debug
+symbols. Set ``-DBUILD_TESTING=OFF`` to omit test targets. Python 3 is optional;
+when available, CTest also registers the CLI session tests and the sixty-file
+ABC truth-table verification as ``abc_truth_table_tests``.
+
+For a CUDA build targeting an A100 or A800 GPU::
+
+  cmake -S . -B build/cuda -DCMAKE_BUILD_TYPE=Release -DSTP_ENABLE_CUDA=ON -DSTP_CUDA_ARCHITECTURES=80
+  cmake --build build/cuda --parallel
+  ctest --test-dir build/cuda --output-on-failure
+
+The CUDA Toolkit (including ``nvcc``) is required for this build. Adjust the
+architecture for your GPU. CPU tests have the ``cpu`` label and exclude CUDA
+unit cases; ``cuda_runtime_tests`` runs those cases separately with the ``cuda``
+label. Select either group with ``ctest --test-dir build/cuda -L cpu`` or
+``ctest --test-dir build/cuda -L cuda``. The latter requires an available GPU.
 
 The current expression-simulation test executable can also be invoked
 directly::
