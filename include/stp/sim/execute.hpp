@@ -13,6 +13,8 @@ using stp_data = uint32_t;
 using id = stp_data;
 using stp_expr = std::vector<id>;
 
+inline uint64_t stp_ops = 0;
+
 inline std::vector<stp_data> generate_swap_vec(const stp_data &m, const stp_data &n)
 {
   stp_data dim = m * n;
@@ -97,6 +99,7 @@ inline std::vector<stp_data> In_KR_Vec(stp_data dim, const std::vector<stp_data>
 
     std::transform(A_data, A_data + A_col, C.data() + idx,
                    [temp](stp_data a_val) { return temp + a_val; });
+    stp_ops++;
   }
   return C;
 }
@@ -123,6 +126,7 @@ inline std::vector<stp_data> Vec_KR_In(stp_data dim, const std::vector<stp_data>
     stp_data idx = i * dim + 1;
 
     std::iota(C.begin() + idx, C.begin() + idx + dim, temp);
+    stp_ops++;
   }
   return C;
 }
@@ -180,6 +184,7 @@ inline std::vector<stp_data> Vec_semi_tensor_product(const std::vector<stp_data>
       for (stp_data j = 0; j < times; j++)
       {
         C[times * i + j + 1] = A[1 + B[i + 1] * times + j];
+        stp_ops++;
       }
     }
 

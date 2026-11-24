@@ -12,7 +12,7 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fPIC")
 #Add CUDA source files to the project
 # include directories are handled by root CMakeLists.txt
 
-add_library(stp_cuda  STATIC stp_cuda.cu)
+add_library(stp_cuda  STATIC stp_cuda.cu boolean_cuda.cu)
 target_include_directories(stp_cuda PRIVATE ${PROJECT_SOURCE_DIR}/include)
 set_target_properties( stp_cuda
                        PROPERTIES

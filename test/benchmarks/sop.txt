@@ -1,0 +1,2 @@
+sopcec --lhs "A2B2+A0(B0+B1)+(A0+A1)B0" --rhs "A2B2+A0B0+A0B1+A1B0" --stats
+sopcec --lhs "A2B2+A2B1" --rhs "A2(B2+B0)"
